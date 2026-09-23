@@ -19,3 +19,26 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+Data sources / 出典
+
+This project's data is derived from data published by the National Diet
+Library, Japan (NDL). The MIT License above applies to the source code of
+this project; the source materials below are in the public domain.
+
+本プロジェクトのデータは、国立国会図書館が公開するデータを元に作成しています。
+
+- 底本: 上田万年・松井簡治 著『大日本国語辞典』第1〜4巻（金港堂書籍, 1915〜1919）
+- 国立国会図書館デジタルコレクション
+  info:ndljp/pid/954645, 954646, 954647, 954648
+  （インターネット公開・保護期間満了 / Public Domain Mark）
+  https://dl.ndl.go.jp/
+- 国立国会図書館「次世代デジタルライブラリー」全文テキスト（Public Domain Mark）
+  https://lab.ndl.go.jp/dl/
+- NDLOCR (ndlocr_cli), 国立国会図書館, CC BY 4.0
+  https://github.com/ndl-lab/ndlocr_cli
+
+本プロジェクトの成果物は、上記を元に本プロジェクトが抽出・加工・校正したものであり、
+原著者および国立国会図書館が作成したものではありません。
