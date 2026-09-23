@@ -31,11 +31,13 @@ export const paths = {
   labBookJson: (pid: string) => join(paths.rawNdl(pid), "lab-book.json"),
   labFulltextJson: (pid: string) => join(paths.rawNdl(pid), "lab-fulltext.json"),
   imagesDir: (pid: string) => join(paths.rawNdl(pid), "images"),
-  /** ndlocr_cli の出力をそのまま保存するディレクトリ */
-  rawNdlocr: (pid: string) => join(DATA_DIR, "raw", "ndlocr", pid),
-  /** ndlocr_cli の入力用（single input dir mode: <root>/img/*.jpg） */
-  ndlocrInput: (pid: string) => join(DATA_DIR, "tmp", "ndlocr-input", pid),
+  /** ndlocr-lite の出力（画像ごとの xml/json/txt）をそのまま保存するディレクトリ */
+  rawNdlocrLite: (pid: string) => join(DATA_DIR, "raw", "ndlocr-lite", pid),
+  /** ndlocr-lite の入力用（未処理の画像へのハードリンク） */
+  ndlocrLiteInput: (pid: string) => join(DATA_DIR, "tmp", "ndlocr-lite-input", pid),
   workJson: (pid: string) => join(DATA_DIR, "work", `${pid}.json`),
+  /** 見出し語・表記の候補 */
+  extractJson: (pid: string) => join(DATA_DIR, "extract", `${pid}.json`),
 };
 
 export const USER_AGENT = Deno.env.get("NDL_USER_AGENT") ??
@@ -43,3 +45,10 @@ export const USER_AGENT = Deno.env.get("NDL_USER_AGENT") ??
 
 /** NDL へのリクエスト間隔（ミリ秒）。サーバ負荷を避けるため逐次かつ間隔を空けて取得する。 */
 export const REQUEST_INTERVAL_MS = Number(Deno.env.get("NDL_REQUEST_INTERVAL_MS") ?? "1000");
+
+/** IIIF 画像のリクエスト間隔（ミリ秒）。1〜3 秒間隔では約130件でアクセス制限（403）に掛かったため長めにする。 */
+export const IMAGE_INTERVAL_MS = Number(Deno.env.get("NDL_IMAGE_INTERVAL_MS") ?? "6000");
+
+/** アクセス制限（403）に掛かったときに待つ時間（ミリ秒）と、再開を試みる回数 */
+export const BLOCKED_WAIT_MS = Number(Deno.env.get("NDL_BLOCKED_WAIT_MS") ?? String(15 * 60_000));
+export const BLOCKED_MAX_RETRIES = 8;
