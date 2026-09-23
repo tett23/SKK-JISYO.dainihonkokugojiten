@@ -163,7 +163,8 @@ function orderBounds(keys: string[], i: number): [string, string] {
 const CONFUSABLE: string[] = [
   "あのめおわぬ",
   "いりこ",
-  "うらろるちつ",
+  // ろ・る は古い語形と現代の語形の違い（わろし / わるし）になりやすいので入れない
+  "うらちつ",
   "しくつ",
   "さきち",
   "はほけにば",
@@ -176,9 +177,15 @@ const CONFUSABLE: string[] = [
   "かやが",
 ];
 
-function confusables(c: string): string[] {
+/**
+ * この辞書の OCR（ndlocr-lite と NDL 側 OCR の両方）で特に頻繁な字形の取り違え。
+ * 二系統の OCR が同じ読みを出していても、この取り違えは両方に起きる
+ */
+const SYSTEMATIC_CONFUSABLE: string[] = ["うらつ", "きさ", "あのめ"];
+
+function confusables(c: string, groups: string[] = CONFUSABLE): string[] {
   const out = new Set<string>();
-  for (const g of CONFUSABLE) if (g.includes(c)) { for (const x of g) out.add(x); }
+  for (const g of groups) if (g.includes(c)) { for (const x of g) out.add(x); }
   for (const v of [voiced(c), semiVoiced(c)]) if (v) out.add(v);
   const plain = c.normalize("NFD")[0];
   if (plain !== c) out.add(plain);
@@ -190,13 +197,13 @@ function confusables(c: string): string[] {
  * 読みの 1 文字を取り違えやすいかなに置き換えた案。区切り "-" が「し」「ら」に化けたものは
  * 区切りに戻す案も出す（おほしぶさ → おほ-ぶさ）
  */
-function repairAlternatives(reading: string): string[] {
+function repairAlternatives(reading: string, groups: string[] = CONFUSABLE): string[] {
   const chars = [...reading];
   const out = new Set<string>();
   chars.forEach((ch, i) => {
     if (ch === "-") return;
     const at = (c: string) => [...chars.slice(0, i), c, ...chars.slice(i + 1)].join("");
-    for (const c of confusables(ch)) out.add(at(c));
+    for (const c of confusables(ch, groups)) out.add(at(c));
     if ((ch === "し" || ch === "ら") && i > 0 && i < chars.length - 1) out.add(at("-"));
   });
   out.delete(reading);
@@ -434,6 +441,8 @@ function resolve(
   suspicious: boolean,
   outlier: boolean,
   ctx: Context,
+  /** NDL 側 OCR の読み（ndlocr-lite とは別のエンジン。あれば） */
+  readingB?: string,
 ): Resolved | undefined {
   const withFix = (o: Option, base: Option): Fix | undefined =>
     o.reading !== base.reading
@@ -475,8 +484,14 @@ function resolve(
     if (m) return { ...m, method: "align", notation: o.notation, fix: withFix(o, base) };
   }
   if (!suspicious) return undefined;
+  // NDL 側 OCR（別のエンジン）の読みが元の読みと一致するなら、底本の語形である可能性が高い。
+  // この場合、辞書に合わせた書き換えは、両方の OCR に共通する頻繁な字形の取り違え
+  // （う/ら/つ、き/さ、あ/の/め、濁点）の修復だけにし、読みの補正はしない
+  // （底本の古い語形を現代の語形に書き換えないため）
+  const confirmedOriginal = readingB !== undefined && plain(readingB) === plain(base.reading);
   // 読みの 1 文字の取り違えを直して L・JMdict と完全に一致するなら採用する
-  for (const reading of repairAlternatives(base.reading)) {
+  const groups = confirmedOriginal ? SYSTEMATIC_CONFUSABLE : CONFUSABLE;
+  for (const reading of repairAlternatives(base.reading, groups)) {
     const l = matchL(reading, base.notation, pos, kango, ctx);
     const m = l ?? matchJM(reading, base.notation, pos, kango, ctx);
     if (m) {
@@ -495,6 +510,7 @@ function resolve(
       };
     }
   }
+  if (confirmedOriginal) return undefined;
   const r = fixReadingByDict(base.reading, base.notation, pos, kango, ctx);
   if (r) {
     return {
@@ -541,6 +557,95 @@ function findNdl(c: Candidate, ndl: NdlCandidate[] | undefined): NdlCandidate | 
 }
 
 const plain = (r: string) => r.replaceAll("-", "");
+
+const bareKana = (c: string) => c.normalize("NFD")[0];
+
+/**
+ * 濁点・半濁点の読み分け。系統ごとの読みが濁点・半濁点だけで割れている箇所について、
+ * 観測された読みの組み合わせのうち L・JMdict に同じ表記で載るものがちょうど 1 つなら、
+ * それに合わせる。濁点の有無だけの違いなので、底本の語形を現代の語形に書き換えることはない。
+ * 決まらず、Unihan での対応付けや読みの補正でしか検証できていない候補は未検証にする
+ * （抜き取りでは、この場合の誤りが約 13% あった）。
+ */
+function resolveVoicing(e: CleanEntry, sources: (string | undefined)[], ctx: Context) {
+  const current = [...plain(e.reading)];
+  const srcs = sources.filter((s): s is string => !!s).map((s) => [...plain(s)])
+    .filter((s) => s.length === current.length);
+  const positions = current.flatMap((c, i) => {
+    const seen = new Set([c, ...srcs.map((s) => s[i])]);
+    return seen.size > 1 && new Set([...seen].map(bareKana)).size === 1 ? [[i, [...seen]]] : [];
+  }) as [number, string[]][];
+  if (positions.length === 0 || positions.length > 4) return;
+
+  // 組み合わせを作り、区切り "-" の位置を保ったまま読みに戻す
+  let combos: string[][] = [current];
+  for (const [i, alts] of positions) {
+    combos = combos.flatMap((c) => alts.map((a) => c.map((x, k) => (k === i ? a : x))));
+  }
+  const withHyphen = (chars: string[]) => {
+    let k = 0;
+    return [...e.reading].map((c) => (c === "-" ? "-" : chars[k++])).join("");
+  };
+  const matches = combos.map(withHyphen).flatMap((reading) => {
+    const m = matchL(reading, e.notation!, e.pos, e.kango, ctx) ??
+      matchJM(reading, e.notation!, e.pos, e.kango, ctx);
+    return m ? [{ reading, m, inL: !!matchL(reading, e.notation!, e.pos, e.kango, ctx) }] : [];
+  });
+  const self = matches.find((x) => x.reading === e.reading);
+  if (matches.length === 1 && !self) {
+    const [{ reading, m, inL }] = matches;
+    e.fixes.push({
+      field: "reading",
+      from: e.reading,
+      to: reading,
+      reason: "濁点・半濁点の読み分けを辞書で判定",
+    });
+    e.reading = reading;
+    e.modern = m.modern;
+    e.skkKey = m.skkKey;
+    e.okuri = m.okuri;
+    e.method = inL ? "L" : "JMdict";
+    return;
+  }
+  if (!self && (e.method === "align" || e.method === "dict-reading")) {
+    e.status = "unverified";
+    e.reason = "voicing-ambiguous";
+  }
+}
+
+/**
+ * 字音の「う」を二系統とも「ら」と誤読しやすい（ちゅう-けら 中教、にざら 二藏）。
+ * Unihan での対応付けだけで検証された読みで、字音の途中（あ段・え段・お段の直後）の「ら」を
+ * 「う」に直すと L・JMdict に同じ表記で載る場合は直す。
+ * 「ら」が正しい読み（にかい-ぐら 二階藏）は、直した読みが辞書に載らないので変わらない
+ */
+function fixRaToU(e: CleanEntry, ctx: Context) {
+  const chars = [...e.reading];
+  for (let i = 1; i < chars.length; i++) {
+    if (chars[i] !== "ら" || !shiftable(chars[i - 1])) continue;
+    const reading = [...chars.slice(0, i), "う", ...chars.slice(i + 1)].join("");
+    const l = matchL(reading, e.notation!, e.pos, e.kango, ctx);
+    const m = l ?? matchJM(reading, e.notation!, e.pos, e.kango, ctx);
+    if (!m) continue;
+    e.fixes.push({
+      field: "reading",
+      from: e.reading,
+      to: reading,
+      reason: "字音の う の誤読（ら）",
+    });
+    e.reading = reading;
+    e.modern = m.modern;
+    e.skkKey = m.skkKey;
+    e.method = l ? "L" : "JMdict";
+    return;
+  }
+}
+
+/** 字音で直後に「う」が来うる仮名（あ段・え段・お段、ゃ・ょ） */
+const shiftable = (c: string) =>
+  /[あかがさざただなはばぱまやらわえけげせぜてでねへべぺめれおこごそぞとどのほぼぽもよろゃょ]/.test(
+    c,
+  );
 
 /**
  * 三系統（ndlocr-lite の紙面全体、NDL 側 OCR、見出しの切り出しの読み直し）の読みの多数決。
@@ -726,10 +831,22 @@ export function cleanseVolume(
     const suspicious = e.order === "outlier" || (e.ndl !== undefined && !e.ndl.agree);
     // 二系統の OCR が一致した読みは、五十音順から外れていても Unihan での対応付けにかける
     const outlier = e.order === "outlier" && vote !== "agree" && vote !== "override";
-    const r = resolve(options, e.pos, e.kango, suspicious, outlier, ctx);
+    let r = resolve(options, e.pos, e.kango, suspicious, outlier, ctx, readingB);
     if (r?.method === "L-notation") {
       // 表記の補正は抜き取りで半数近くが誤りだったので適用せず、提案として残して未検証にする
       e.suggestions.push({ ...r.fix!, reason: r.fix!.reason + "（未適用）" });
+    }
+    if (
+      r?.method === "dict-reading" &&
+      ![readingB, readingC].some((x) =>
+        x && modernVariants(x, { kango: e.kango }).includes(r!.modern)
+      )
+    ) {
+      // 読みの補正は、底本の古い語形（とも-どち、とっ-くみ）を L・JMdict にある現代の語形
+      // （ともだち、とりくみ）に書き換えてしまうことがある。NDL 側 OCR か見出しの読み直しが
+      // 補正後の読みと一致した場合だけ適用し、それ以外は提案として残す
+      e.suggestions.push({ ...r.fix!, reason: r.fix!.reason + "（他の OCR と一致せず未適用）" });
+      r = undefined;
     }
     if (r && r.method !== "L-notation") {
       if (r.fix?.field === "reading") e.reading = r.fix.to;
@@ -739,16 +856,11 @@ export function cleanseVolume(
       e.skkKey = r.skkKey;
       e.okuri = r.okuri;
       e.method = r.method;
-      if (r.method === "dict-reading") {
-        // 補正前の読みの現代仮名遣いの候補のうち、補正後の読みに最も近いもの
-        // （はんにや-の-めん → はんにゃのめん。既定の変換だと はんにやのめん になる）
-        const original = modernVariants(e.reading, { kango: e.kango })
-          .filter((v) => v !== r.skkKey)
-          .sort((a, b) => levenshtein(a, r.skkKey) - levenshtein(b, r.skkKey))[0];
-        if (original) e.altSkkKeys = [original];
-      }
       e.status = "accepted";
-    } else {
+      resolveVoicing(e, [e.source.reading.replaceAll("ー", "-"), readingB, readingC], ctx);
+      if (e.status === "accepted" && e.method === "align") fixRaToU(e, ctx);
+    }
+    if (e.status !== "accepted") {
       // 未検証: 既定の変換結果を使う。動詞・形容詞は送り仮名を最後の 1 文字とする
       const modern = modernVariants(e.reading, { kango: e.kango })[0];
       e.modern = modern;
