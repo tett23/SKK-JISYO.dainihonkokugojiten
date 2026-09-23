@@ -66,6 +66,7 @@ deno task extract # 作業用 JSON から見出し語・表記の候補を抽出
 deno task all     # 上記を順に実行
 
 deno task resources # クレンジングに使う SKK-JISYO.L・Unihan・JMdict を取得
+deno task recheck   # NDL 側 OCR と読みが食い違う見出しを切り出して読み直す（画像が必要、数時間）
 deno task cleanse   # 候補を照合・補正して data/cleanse/<pid>.json に保存
 deno task build     # SKK 辞書とレポートを dist/ に出力（DIST_DIR で出力先を変えられる）
 deno task compare <旧 cleanse> <新 cleanse>  # 2 つのビルドを比べる
@@ -94,7 +95,7 @@ ndlocr-lite の実行コマンドは環境変数 `NDLOCR_LITE_CMD` で変更で�
 [.github/workflows/build-dictionary.yml](.github/workflows/build-dictionary.yml) が毎週日曜 03:00（JST）に辞書をビルドし、GitHub のリリース（タグ `build-YYYYMMDD`、プレリリース）として公開する。Actions の画面から手動でも実行できる。
 
 - JMdict のライセンスは、JMdict を使うソフトウェアに最新版からの定期的な更新の手順を求めているので、毎回最新の JMdict を取得してビルドし直す。
-- OCR（数時間かかる）はワークフローでは行わない。OCR 済みの見出し語の候補（`data/extract/`、`data/extract-ndl/`）をタグ `inputs` のリリースに置き、それを使う。
+- OCR（数時間かかる）はワークフローでは行わない。OCR 済みの見出し語の候補（`data/extract/`、`data/extract-ndl/`、`data/recheck/`）をタグ `inputs` のリリースに置き、それを使う。
 - リリースのアーカイブには、辞書3種、`entries.tsv.gz`、`report.md`、使ったリソースの取得元と取得日時（`resources.json`）、`LICENSE`・`NOTICE`・`LICENSES/`・`README.md` を入れる。
 
 OCR や抽出の処理を変えたときは、入力データを作り直して `inputs` のリリースを更新する。
@@ -102,6 +103,8 @@ OCR や抽出の処理を変えたときは、入力データを作り直して 
 ```sh
 deno task extract
 deno task cleanse          # data/extract-ndl/ が無ければ NDL 側 OCR の候補も作られる
+deno task recheck          # 読み直しの対象はクレンジング結果から選ぶ
+deno task cleanse
 deno task pack-inputs      # dist/inputs.tar.gz
 gh release upload inputs dist/inputs.tar.gz --clobber
 ```
@@ -128,6 +131,7 @@ data/
 ├── work/<pid>.json               作業用 JSON
 ├── extract/<pid>.json            見出し語・表記の候補
 ├── extract-ndl/<pid>.json        NDL 側 OCR から取り出した見出し語の候補（クレンジングでの突き合わせ用）
+├── recheck/<pid>.json            見出しの切り出しの読み直しの結果（raw/recheck/ に OCR の出力）
 └── cleanse/<pid>.json            クレンジング結果（補正の記録つき）
 ```
 
