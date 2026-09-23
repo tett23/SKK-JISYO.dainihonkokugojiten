@@ -5,6 +5,7 @@ import {
   BLOCKED_MAX_RETRIES,
   BLOCKED_WAIT_MS,
   DEFAULT_VOLUMES,
+  DIST_DIR,
   FIRST_EDITION_YEARS,
   IMAGE_INTERVAL_MS,
   paths,
@@ -12,10 +13,22 @@ import {
 import { BlockedError, download } from "./http.ts";
 import { imageFileName, isInternetPublic, ndlUrls, parseManifest } from "./ndl.ts";
 import { ndlocrLiteConfigFromEnv, runNdlocrLite } from "./ndlocr_lite.ts";
-import { extractVolume } from "./extract.ts";
+import { type ExtractVolume, extractVolume } from "./extract.ts";
+import { buildContext, cleanseVolume, type CleanVolume } from "./cleanse.ts";
+import { buildDicts, renderDict, renderReport, renderTsv } from "./build.ts";
+import { compareBuilds } from "./compare.ts";
+import { fetchResources, loadSkkL, loadUnihan, resourcePaths } from "./resources.ts";
+import { loadJmdict } from "./jmdict.ts";
+import {
+  extractNdlVolume,
+  fromNdlExtractJson,
+  type NdlCandidate,
+  toNdlExtractJson,
+} from "./extract_ndl.ts";
 import { buildWork, type WorkSource, type WorkVolume } from "./work.ts";
 
-const USAGE = `Usage: deno task <fetch|ocr|work|extract|all> [options] [pid...]
+const USAGE =
+  `Usage: deno task <fetch|ocr|work|extract|resources|cleanse|build|compare|all> [options] [pid...]
 
 pid を省略すると初版全4巻 (${DEFAULT_VOLUMES.map((v) => v.pid).join(", ")}) を対象にする。
 
@@ -28,6 +41,10 @@ ocr    画像に ndlocr-lite を実行し、出力を data/raw/ndlocr-lite/<pid>
 work   生データから作業用 JSON を data/work/<pid>.json に生成する。
   --source <ndl-lab-fulltext|ndlocr-lite>  使用する生データ（既定: ndlocr-lite の結果があれば ndlocr-lite）
 extract  作業用 JSON から見出し語・表記の候補を data/extract/<pid>.json に抽出する。
+resources  クレンジングに使う SKK-JISYO.L と Unihan を取得する。
+cleanse  候補を SKK-JISYO.L・Unihan・NDL 側 OCR と照合して補正し、data/cleanse/<pid>.json に保存する。
+build  クレンジング結果から SKK 辞書とレポートを dist/ に出力する（pid の指定は対象の絞り込み）。
+compare <旧 cleanse ディレクトリ> <新 cleanse ディレクトリ>  2 つのビルドを比べた結果を出力する。
 all    fetch → ocr → work → extract を順に実行する。`;
 
 function parsePages(s: string | undefined): ((frame: number) => boolean) | undefined {
@@ -134,6 +151,78 @@ async function extractStep(pid: string) {
   console.log(`  ${result.candidates.length} candidates (${kinds}) -> ${dest}`);
 }
 
+/**
+ * NDL 側 OCR の候補を読み込む。キャッシュ（data/extract-ndl/）があればそれを使い、
+ * 無ければ NDLラボ全文テキストから取り出してキャッシュする
+ */
+async function loadNdlCandidates(pid: string): Promise<Map<number, NdlCandidate[]>> {
+  const cache = paths.extractNdlJson(pid);
+  try {
+    return fromNdlExtractJson(JSON.parse(await Deno.readTextFile(cache)));
+  } catch (e) {
+    if (!(e instanceof Deno.errors.NotFound)) throw e;
+  }
+  const work = await buildWork(pid, "ndl-lab-fulltext").catch(() => undefined);
+  if (!work) {
+    console.warn(`  ${pid}: NDL 側 OCR の候補がありません（突き合わせをせずに続けます）`);
+    return new Map();
+  }
+  const ndl = extractNdlVolume(work);
+  await ensureDir(dirname(cache));
+  await Deno.writeTextFile(cache, JSON.stringify(toNdlExtractJson(pid, ndl)) + "\n");
+  return ndl;
+}
+
+async function cleanseStep(pids: string[]) {
+  const [L, unihan, jm] = await Promise.all([
+    loadSkkL(),
+    loadUnihan(),
+    Deno.env.get("NO_JMDICT") ? undefined : loadJmdict(resourcePaths.jmdict),
+  ]);
+  const ctx = buildContext(L, unihan, jm);
+  for (const pid of pids) {
+    console.log(`[cleanse] ${pid}`);
+    const extract: ExtractVolume = JSON.parse(await Deno.readTextFile(paths.extractJson(pid)));
+    const ndl = await loadNdlCandidates(pid);
+    const result = cleanseVolume(extract, ndl, ctx);
+    const dest = paths.cleanseJson(pid);
+    await ensureDir(dirname(dest));
+    await Deno.writeTextFile(dest, JSON.stringify(result, null, 2) + "\n");
+    const statuses = Object.entries(Object.groupBy(result.entries, (e) => e.status))
+      .map(([k, v]) => `${k}=${v?.length}`).join(" ");
+    console.log(`  ${result.entries.length} entries (${statuses}) -> ${dest}`);
+  }
+}
+
+async function buildStep(pids: string[]) {
+  const L = await loadSkkL();
+  const volumes: CleanVolume[] = [];
+  for (const pid of pids) {
+    volumes.push(JSON.parse(await Deno.readTextFile(paths.cleanseJson(pid))));
+  }
+  const dicts = buildDicts(volumes, L);
+  await ensureDir(DIST_DIR);
+  const name = "SKK-JISYO.dainihonkokugojisyo";
+  const outputs: [string, string][] = [
+    [name, renderDict(dicts.verified, name, "検証済みのエントリ")],
+    [`${name}.noL`, renderDict(dicts.noL, `${name}.noL`, "検証済みのうち SKK-JISYO.L に無い候補")],
+    [
+      `${name}.unverified`,
+      renderDict(
+        dicts.unverified,
+        `${name}.unverified`,
+        "検証できなかったエントリ（誤りを多く含む）",
+      ),
+    ],
+    ["entries.tsv", renderTsv(volumes)],
+    ["report.md", renderReport(volumes, dicts)],
+  ];
+  for (const [file, text] of outputs) {
+    await Deno.writeTextFile(join(DIST_DIR, file), text);
+    console.log(`  -> ${join(DIST_DIR, file)}`);
+  }
+}
+
 if (import.meta.main) {
   const args = parseArgs(Deno.args, {
     boolean: ["force", "force-ocr", "help"],
@@ -156,6 +245,26 @@ if (import.meta.main) {
     forceOcr: args["force-ocr"],
     pages: args.pages,
   };
+  if (command === "resources") {
+    await fetchResources({ force: args.force });
+    Deno.exit(0);
+  }
+  if (command === "cleanse") {
+    await cleanseStep(pids);
+    Deno.exit(0);
+  }
+  if (command === "compare") {
+    if (rest.length !== 2) {
+      console.error("compare には旧・新のクレンジング結果のディレクトリを指定してください");
+      Deno.exit(1);
+    }
+    console.log(await compareBuilds(rest[0], rest[1]));
+    Deno.exit(0);
+  }
+  if (command === "build") {
+    await buildStep(pids);
+    Deno.exit(0);
+  }
   for (const pid of pids) {
     switch (command) {
       case "fetch":
