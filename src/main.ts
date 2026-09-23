@@ -1,8 +1,15 @@
 import { parseArgs } from "@std/cli/parse-args";
 import { ensureDir } from "@std/fs";
 import { dirname, join } from "@std/path";
-import { DEFAULT_VOLUMES, FIRST_EDITION_YEARS, paths } from "./config.ts";
-import { download } from "./http.ts";
+import {
+  BLOCKED_MAX_RETRIES,
+  BLOCKED_WAIT_MS,
+  DEFAULT_VOLUMES,
+  FIRST_EDITION_YEARS,
+  IMAGE_INTERVAL_MS,
+  paths,
+} from "./config.ts";
+import { BlockedError, download } from "./http.ts";
 import { imageFileName, isInternetPublic, ndlUrls, parseManifest } from "./ndl.ts";
 import { ndlocrConfigFromEnv, runNdlocr } from "./ndlocr.ts";
 import { buildWork, hasLabFulltext, type WorkSource } from "./work.ts";
@@ -29,6 +36,27 @@ function parsePages(s: string | undefined): ((frame: number) => boolean) | undef
     return [a, b ?? a] as const;
   });
   return (f) => ranges.some(([a, b]) => a <= f && f <= b);
+}
+
+/** 画像を取得する。アクセス制限（403）に掛かったら時間を置いて再開する */
+async function downloadImage(url: string, dest: string, force: boolean) {
+  for (let attempt = 1;; attempt++) {
+    try {
+      return await download(url, dest, {
+        force,
+        missingStatuses: [404],
+        intervalMs: IMAGE_INTERVAL_MS,
+      });
+    } catch (e) {
+      if (!(e instanceof BlockedError) || attempt > BLOCKED_MAX_RETRIES) throw e;
+      console.warn(
+        `  ${e.message}。${
+          BLOCKED_WAIT_MS / 60_000
+        }分待って再開します (${attempt}/${BLOCKED_MAX_RETRIES})`,
+      );
+      await new Promise((r) => setTimeout(r, BLOCKED_WAIT_MS));
+    }
+  }
 }
 
 async function fetchVolume(pid: string, opts: { force: boolean; images: boolean; pages?: string }) {
@@ -77,7 +105,7 @@ async function fetchVolume(pid: string, opts: { force: boolean; images: boolean;
   await ensureDir(paths.imagesDir(pid));
   for (const [i, c] of canvases.entries()) {
     const dest = join(paths.imagesDir(pid), imageFileName(c.frame));
-    const r = await download(c.imageUrl, dest, { force });
+    const r = await downloadImage(c.imageUrl, dest, force);
     if (r === "missing") throw new Error(`${pid}: 画像が取得できません ${c.imageUrl}`);
     if (r === "downloaded") console.log(`  image ${i + 1}/${canvases.length}: ${dest}`);
   }

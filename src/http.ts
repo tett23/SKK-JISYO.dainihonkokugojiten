@@ -15,19 +15,26 @@ export type FetchRecord = {
 export type DownloadResult = "downloaded" | "skipped" | "missing";
 
 const MAX_RETRIES = 5;
-const MISSING_STATUSES = new Set([403, 404]);
+const DEFAULT_MISSING_STATUSES = [403, 404];
+
+/** サーバ側のアクセス制限（WAF 等）で拒否された */
+export class BlockedError extends Error {
+  constructor(readonly url: string, readonly status: number) {
+    super(`HTTP ${status} ${url}: アクセスが拒否されました（アクセス制限の可能性があります）`);
+  }
+}
 
 let lastRequestAt = 0;
 
-async function throttle(): Promise<void> {
-  const wait = lastRequestAt + REQUEST_INTERVAL_MS - Date.now();
+async function throttle(intervalMs: number): Promise<void> {
+  const wait = lastRequestAt + intervalMs - Date.now();
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   lastRequestAt = Date.now();
 }
 
-async function fetchWithRetry(url: string): Promise<Response> {
+async function fetchWithRetry(url: string, intervalMs: number): Promise<Response> {
   for (let attempt = 0;; attempt++) {
-    await throttle();
+    await throttle(intervalMs);
     try {
       const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
       if (res.status !== 429 && res.status < 500) return res;
@@ -70,20 +77,23 @@ async function writeAtomic(path: string, data: Uint8Array | string): Promise<voi
 /**
  * url の内容を加工せずバイト列のまま dest に保存し、取得記録を `<dest>.fetch.json` に残す。
  * 取得済み（記録あり）の場合は force でない限り再取得しない。
- * 403/404 は「データが存在しない」として記録し "missing" を返す。
+ * missingStatuses（既定: 403, 404）は「データが存在しない」として記録し "missing" を返す。
+ * それ以外の 403 はアクセス制限とみなし、記録を残さず BlockedError を投げる。
  */
 export async function download(
   url: string,
   dest: string,
-  { force = false } = {},
+  { force = false, missingStatuses = DEFAULT_MISSING_STATUSES, intervalMs = REQUEST_INTERVAL_MS } =
+    {},
 ): Promise<DownloadResult> {
+  const missing = new Set(missingStatuses);
   if (!force) {
     const prev = await readRecord(dest);
     if (prev?.status === 200) return "skipped";
-    if (prev && MISSING_STATUSES.has(prev.status)) return "missing";
+    if (prev && missing.has(prev.status)) return "missing";
   }
 
-  const res = await fetchWithRetry(url);
+  const res = await fetchWithRetry(url, intervalMs);
   const record: FetchRecord = {
     url,
     status: res.status,
@@ -91,7 +101,11 @@ export async function download(
     headers: Object.fromEntries(res.headers),
   };
 
-  if (MISSING_STATUSES.has(res.status)) {
+  if (res.status === 403 && !missing.has(403)) {
+    await res.body?.cancel();
+    throw new BlockedError(url, res.status);
+  }
+  if (missing.has(res.status)) {
     await res.body?.cancel();
     await writeAtomic(recordPath(dest), JSON.stringify(record, null, 2) + "\n");
     return "missing";

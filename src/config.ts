@@ -43,3 +43,10 @@ export const USER_AGENT = Deno.env.get("NDL_USER_AGENT") ??
 
 /** NDL へのリクエスト間隔（ミリ秒）。サーバ負荷を避けるため逐次かつ間隔を空けて取得する。 */
 export const REQUEST_INTERVAL_MS = Number(Deno.env.get("NDL_REQUEST_INTERVAL_MS") ?? "1000");
+
+/** IIIF 画像のリクエスト間隔（ミリ秒）。1〜3 秒間隔では約130件でアクセス制限（403）に掛かったため長めにする。 */
+export const IMAGE_INTERVAL_MS = Number(Deno.env.get("NDL_IMAGE_INTERVAL_MS") ?? "6000");
+
+/** アクセス制限（403）に掛かったときに待つ時間（ミリ秒）と、再開を試みる回数 */
+export const BLOCKED_WAIT_MS = Number(Deno.env.get("NDL_BLOCKED_WAIT_MS") ?? String(15 * 60_000));
+export const BLOCKED_MAX_RETRIES = 8;
