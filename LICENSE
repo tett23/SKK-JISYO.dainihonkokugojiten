@@ -37,8 +37,8 @@ this project; the source materials below are in the public domain.
   https://dl.ndl.go.jp/
 - 国立国会図書館「次世代デジタルライブラリー」全文テキスト（Public Domain Mark）
   https://lab.ndl.go.jp/dl/
-- NDLOCR (ndlocr_cli), 国立国会図書館, CC BY 4.0
-  https://github.com/ndl-lab/ndlocr_cli
+- NDLOCR-Lite (ndlocr-lite), 国立国会図書館, CC BY 4.0
+  https://github.com/ndl-lab/ndlocr-lite
 
 本プロジェクトの成果物は、上記を元に本プロジェクトが抽出・加工・校正したものであり、
 原著者および国立国会図書館が作成したものではありません。
