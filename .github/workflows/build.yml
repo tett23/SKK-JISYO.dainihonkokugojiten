@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       DIST_DIR: dist/release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: denoland/setup-deno@v2
         with:
@@ -47,7 +47,7 @@ jobs:
       - name: Record resources
         run: jq -s 'map({url, fetchedAt, sha256})' data/raw/resources/*.fetch.json > "$DIST_DIR/resources.json"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dictionary
           path: dist/release/
