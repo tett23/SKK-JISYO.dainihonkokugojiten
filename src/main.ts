@@ -12,9 +12,10 @@ import {
 import { BlockedError, download } from "./http.ts";
 import { imageFileName, isInternetPublic, ndlUrls, parseManifest } from "./ndl.ts";
 import { ndlocrLiteConfigFromEnv, runNdlocrLite } from "./ndlocr_lite.ts";
-import { buildWork, type WorkSource } from "./work.ts";
+import { extractVolume } from "./extract.ts";
+import { buildWork, type WorkSource, type WorkVolume } from "./work.ts";
 
-const USAGE = `Usage: deno task <fetch|ocr|work|all> [options] [pid...]
+const USAGE = `Usage: deno task <fetch|ocr|work|extract|all> [options] [pid...]
 
 pid を省略すると初版全4巻 (${DEFAULT_VOLUMES.map((v) => v.pid).join(", ")}) を対象にする。
 
@@ -26,7 +27,8 @@ ocr    画像に ndlocr-lite を実行し、出力を data/raw/ndlocr-lite/<pid>
   --force-ocr      既存の出力を退避し、全画像を OCR し直す
 work   生データから作業用 JSON を data/work/<pid>.json に生成する。
   --source <ndl-lab-fulltext|ndlocr-lite>  使用する生データ（既定: ndlocr-lite の結果があれば ndlocr-lite）
-all    fetch → ocr → work を順に実行する。`;
+extract  作業用 JSON から見出し語・表記の候補を data/extract/<pid>.json に抽出する。
+all    fetch → ocr → work → extract を順に実行する。`;
 
 function parsePages(s: string | undefined): ((frame: number) => boolean) | undefined {
   if (!s) return undefined;
@@ -120,6 +122,18 @@ async function workVolume(pid: string, source?: WorkSource) {
   console.log(`  ${work.source.kind}: ${work.pages.length} pages -> ${dest}`);
 }
 
+async function extractStep(pid: string) {
+  console.log(`[extract] ${pid}`);
+  const work: WorkVolume = JSON.parse(await Deno.readTextFile(paths.workJson(pid)));
+  const result = extractVolume(work);
+  const dest = paths.extractJson(pid);
+  await ensureDir(dirname(dest));
+  await Deno.writeTextFile(dest, JSON.stringify(result, null, 2) + "\n");
+  const kinds = Object.entries(Object.groupBy(result.candidates, (c) => c.notationKind))
+    .map(([k, v]) => `${k}=${v?.length}`).join(" ");
+  console.log(`  ${result.candidates.length} candidates (${kinds}) -> ${dest}`);
+}
+
 if (import.meta.main) {
   const args = parseArgs(Deno.args, {
     boolean: ["force", "force-ocr", "help"],
@@ -153,10 +167,14 @@ if (import.meta.main) {
       case "work":
         await workVolume(pid, source);
         break;
+      case "extract":
+        await extractStep(pid);
+        break;
       case "all":
         await fetchVolume(pid, opts);
         await ocrVolume(pid, opts);
         await workVolume(pid, source);
+        await extractStep(pid);
         break;
       default:
         console.error(USAGE);

@@ -36,6 +36,8 @@ export const paths = {
   /** ndlocr-lite の入力用（未処理の画像へのハードリンク） */
   ndlocrLiteInput: (pid: string) => join(DATA_DIR, "tmp", "ndlocr-lite-input", pid),
   workJson: (pid: string) => join(DATA_DIR, "work", `${pid}.json`),
+  /** 見出し語・表記の候補 */
+  extractJson: (pid: string) => join(DATA_DIR, "extract", `${pid}.json`),
 };
 
 export const USER_AGENT = Deno.env.get("NDL_USER_AGENT") ??

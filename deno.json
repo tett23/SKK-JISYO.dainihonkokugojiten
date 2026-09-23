@@ -3,6 +3,7 @@
     "fetch": "deno run --allow-net --allow-read --allow-write --allow-env src/main.ts fetch",
     "ocr": "deno run --allow-read --allow-write --allow-env --allow-run src/main.ts ocr",
     "work": "deno run --allow-read --allow-write --allow-env src/main.ts work",
+    "extract": "deno run --allow-read --allow-write --allow-env src/main.ts extract",
     "all": "deno run --allow-net --allow-read --allow-write --allow-env --allow-run src/main.ts all",
     "test": "deno test --allow-read --allow-write --allow-env"
   },
