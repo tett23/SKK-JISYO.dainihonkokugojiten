@@ -66,8 +66,29 @@ function segmentVariants(seg: string, kango: boolean, wordInitial: boolean): str
   return [...results];
 }
 
-/** 位置 i で消費する長さと置き換え候補（先頭が既定） */
+/**
+ * 位置 i で消費する長さと置き換え候補（先頭が既定）。
+ * 拗音を大書きした い段 + や/ゆ/よ（共 きよう → きょう、般若 はんにや → はんにゃ）は、
+ * 通常の処理（おもひやり → おもいやり）に加えて拗音の候補を足す。
+ * どちらが正しいかは照合で選ぶ（内閣告示「現代仮名遣い」付表のキョー・ショーの行に例がある）
+ */
 function step(s: string, i: number, kango: boolean, wordInitial: boolean): [number, string[]][] {
+  const base = stepBase(s, i, kango, wordInitial);
+  const [c, n1, n2] = [s[i], s[i + 1], s[i + 2]];
+  if (!shift(c, "i", "i") || c === "い" || !(n1 === "や" || n1 === "ゆ" || n1 === "よ")) {
+    return base;
+  }
+  const small = ({ や: "ゃ", ゆ: "ゅ", よ: "ょ" } as const)[n1];
+  if (n2 === "う" && n1 !== "や") return [...base, [3, [yoon(c, small) + "う"]]];
+  return [...base, [2, [yoon(c, small)]]];
+}
+
+function stepBase(
+  s: string,
+  i: number,
+  kango: boolean,
+  wordInitial: boolean,
+): [number, string[]][] {
   const c = s[i];
   const n1 = s[i + 1];
   const n2 = s[i + 2];
@@ -79,12 +100,6 @@ function step(s: string, i: number, kango: boolean, wordInitial: boolean): [numb
   // い段 + や/ゃ + う/ふ → ょう（きやう→きょう）
   if (shift(c, "i", "i") && (n1 === "や" || n1 === "ゃ") && (n2 === "う" || n2 === "ふ")) {
     return [[3, [yoon(c, "ょ") + "う"]]];
-  }
-  // 拗音を大書きした い段 + よう/ゆう（共 きよう → きょう、器用 きよう はそのまま）。
-  // 内閣告示「現代仮名遣い」付表のキョー・ショーの行に例がある
-  if (shift(c, "i", "i") && c !== "い" && (n1 === "よ" || n1 === "ゆ") && n2 === "う") {
-    const small = n1 === "よ" ? "ょ" : "ゅ";
-    return [[3, [c + n1 + "う", yoon(c, small) + "う"]]];
   }
   // い段 + ゃゅょ はそのまま（ぢ は じ に）
   if (shift(c, "i", "i") && (n1 === "ゃ" || n1 === "ゅ" || n1 === "ょ")) {
