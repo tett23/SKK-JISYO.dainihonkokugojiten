@@ -33,16 +33,18 @@ export type RecheckVolume = {
   results: Record<string, RecheckResult>;
 };
 
-const plain = (r: string) => r.replaceAll(/[-ー]/g, "");
+const plain = (r: string) => r.replaceAll(/[-ー・]/g, "");
 
 /**
- * 読み直しの対象。NDL 側 OCR と読みが一致しない（または対応が無い）候補で、
- * 検証済みか未検証のもの（除外は対象外）
+ * 読み直しの対象。ndlocr-lite（紙面全体）と NDL 側 OCR の読みが一致しない（または対応が無い）
+ * 候補で、検証済みか未検証のもの（除外は対象外）。
+ * 比べるのは OCR されたままの読み（source）。クレンジングで NDL 側の読みを採用した後の読みと
+ * 比べると、二系統が食い違っていた候補が対象から漏れる
  */
 export function needsRecheck(e: CleanEntry): boolean {
   if (e.status === "excluded") return false;
   if (!e.ndl) return true;
-  return plain(e.ndl.reading) !== plain(e.reading);
+  return plain(e.ndl.reading) !== plain(e.source.reading);
 }
 
 /** 画像の一部を新しい画像に写す（元の画像全体を複製しない） */
