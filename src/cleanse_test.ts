@@ -75,3 +75,16 @@ Deno.test("annotation: 現代の読みと違うときだけ歴史的仮名遣い
     "（名・副）",
   );
 });
+
+Deno.test("voteReading: 三系統の読みの多数決", async () => {
+  const { voteReading } = await import("./cleanse.ts");
+  // 濁点の誤読を 2 系統で直す
+  assertEquals(voteReading(["くん-すゐ", "ぐん-すゐ", "ぐんすゐ"]), "ぐんすゐ");
+  // それぞれ別の位置を誤っていても、1 文字ずつの多数決で正しい読みが残る
+  assertEquals(voteReading(["ゑんのはぎ", "ねんのはぎ", "ゑんのはざ"]), "ゑんのはぎ");
+  // 長さが違う場合は 2 つ以上が一致する読み
+  assertEquals(voteReading(["ぶまゐ", "ぶ-まる", "ぶまる"]), "ぶまる");
+  // 2 系統が食い違うだけでは決まらない
+  assertEquals(voteReading(["せんぴ", "ぜんぴ"]), undefined);
+  assertEquals(voteReading(["あげざま", "あげざま"]), "あげざま");
+});

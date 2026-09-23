@@ -91,6 +91,22 @@ export async function runNdlocrLite(
     return;
   }
 
+  await runOcr(input, output, count, config, stamp);
+  await Deno.remove(input, { recursive: true });
+}
+
+/**
+ * input の画像に ndlocr-lite を実行し、出力・実行コマンド・ログを output に保存する。
+ * startedAt から作るタイムスタンプを run-*.log / run-*.json の名前に使う。
+ */
+export async function runOcr(
+  input: string,
+  output: string,
+  count: number,
+  config: NdlocrLiteConfig,
+  stamp = new Date().toISOString().replaceAll(/[:.]/g, "-"),
+): Promise<void> {
+  const startedAt = new Date().toISOString();
   const [cmd, ...args] = config.command.map((a) =>
     a.replaceAll("{input}", input).replaceAll("{output}", output)
   );
@@ -131,7 +147,6 @@ export async function runNdlocrLite(
   if (!status.success) {
     throw new Error(`ndlocr-lite exited with code ${status.code} (log: ${logPath})`);
   }
-  await Deno.remove(input, { recursive: true });
 }
 
 /** ndlocr-lite の出力 XML のパス（画像名順） */

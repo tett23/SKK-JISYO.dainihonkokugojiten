@@ -1,6 +1,7 @@
 import { alignReading } from "./align.ts";
 import type { BBox, Candidate, ExtractVolume } from "./extract.ts";
 import type { NdlCandidate } from "./extract_ndl.ts";
+import type { RecheckResult } from "./recheck.ts";
 import {
   collationKey,
   dictionaryForms,
@@ -347,7 +348,13 @@ function matchJM(reading: string, notation: string, pos: Pos, kango: boolean, ct
 function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean, ctx: Context) {
   if (OKURI_CATEGORIES.has(pos.category)) return undefined;
   for (const v of modernVariants(reading, { kango })) {
-    if (alignReading(notation, v, ctx.unihan, { maxTrailing: 1 })) {
+    // 表記の後ろに余った読み（省かれた送り仮名）は、表記が 1 文字の場合（おそ-さ 遲）だけ 1 文字許す。
+    // 2 文字以上では許さない（ぎ-すら 擬數 のような誤読を通さないため）
+    const maxTrailing = [...notation].length === 1 ? 1 : 0;
+    // Unihan は旧字体（淨、隱）に訓読みを持たないことが多いので、新字体の表記でも試す
+    if (
+      notationForms(notation, ctx).some((n) => alignReading(n, v, ctx.unihan, { maxTrailing }))
+    ) {
       return { modern: v, skkKey: v, okuri: false };
     }
   }
@@ -376,7 +383,17 @@ function fixReadingByDict(
     r,
     d: Math.min(...variants.map((v) => levenshtein(v, r))),
   }));
-  const ok = scored.filter(({ r, d }) => (d === 1 && r.length >= 3) || (d === 2 && r.length >= 6));
+  // 補正は、同じ長さでの置き換え（OCR の誤読）か、語頭の脱落の補い（くでん → がくでん）に限る。
+  // 末尾や途中での増減は、底本の別の語形（ききぐるし-さ → ききぐるしい）を書き換えてしまう
+  const plausible = (r: string) =>
+    variants.some((v) =>
+      // 語末の文字の置き換えは、底本の別の語形（にぎにぎし-さ → にぎにぎしい）を書き換えるので認めない
+      (r.length === v.length && levenshtein(v, r) <= 2 && r.at(-1) === v.at(-1)) ||
+      (r.length > v.length && r.length - v.length <= 2 && r.endsWith(v) && v.length >= 2)
+    );
+  const ok = scored.filter(({ r, d }) =>
+    plausible(r) && ((d === 1 && r.length >= 3) || (d === 2 && r.length >= 6))
+  );
   if (ok.length !== 1) return undefined;
   return { modern: ok[0].r, from: variants[0] };
 }
@@ -397,7 +414,13 @@ function fixNotationByL(reading: string, notation: string, pos: Pos, kango: bool
   return undefined;
 }
 
-type Option = { reading: string; notation: string; reason?: string };
+type Option = {
+  reading: string;
+  notation: string;
+  reason?: string;
+  /** Unihan での対応付けでは採用しない（L・JMdict との一致だけで採用する） */
+  noAlign?: boolean;
+};
 
 /**
  * 候補を検証する。L との完全一致、Unihan での対応付けの順に試し、どちらも通らなければ
@@ -447,7 +470,7 @@ function resolve(
   for (const o of options) {
     // 五十音順から外れた候補は、元の読みのまま Unihan で対応付けられても採用しない
     // （語頭が落ちた読みが漢字の訓の一部と偶然一致することがある）
-    if (outlier && o === base) continue;
+    if ((outlier && o === base) || o.noAlign) continue;
     const m = matchAlign(o.reading, o.notation, pos, kango, ctx);
     if (m) return { ...m, method: "align", notation: o.notation, fix: withFix(o, base) };
   }
@@ -519,11 +542,42 @@ function findNdl(c: Candidate, ndl: NdlCandidate[] | undefined): NdlCandidate | 
 
 const plain = (r: string) => r.replaceAll("-", "");
 
+/**
+ * 三系統（ndlocr-lite の紙面全体、NDL 側 OCR、見出しの切り出しの読み直し）の読みの多数決。
+ * 3 つとも同じ長さなら 1 文字ずつ多数決を取る（それぞれ別の位置を誤っていても正しい読みが残る）。
+ * そうでなければ、2 つ以上が一致する読みを選ぶ。決まらなければ undefined。
+ */
+export function voteReading(readings: string[]): string | undefined {
+  const xs = readings.map((r) => [...plain(r)]);
+  if (xs.length < 2) return undefined;
+  if (xs.length >= 3 && xs.every((x) => x.length === xs[0].length)) {
+    return xs[0].map((c, i) => {
+      const votes = xs.map((x) => x[i]);
+      return votes.find((v) => votes.filter((w) => w === v).length >= 2) ?? c;
+    }).join("");
+  }
+  const joined = xs.map((x) => x.join(""));
+  return joined.find((j) => joined.filter((k) => k === j).length >= 2);
+}
+
+/** 区切り "-" の無い読みに、同じ読みの系統の区切りを付け直す */
+function withHyphens(consensus: string, sources: string[]): string {
+  const hit = sources.find((s) => plain(s) === consensus && s.includes("-"));
+  if (hit) return hit;
+  const base = sources[0];
+  if ([...plain(base)].length !== [...consensus].length) return consensus;
+  const chars = [...consensus];
+  let k = 0;
+  return [...base].map((c) => (c === "-" ? "-" : chars[k++])).join("");
+}
+
 export function cleanseVolume(
   extract: ExtractVolume,
   /** NDL 側 OCR から取り出した候補（コマ番号 → 候補） */
   ndl: Map<number, NdlCandidate[]>,
   ctx: Context,
+  /** 見出しの切り出しの読み直し（id → 結果） */
+  recheck: Record<string, RecheckResult> = {},
 ): CleanVolume {
   // 1. 正規化と 2. 突き合わせ
   const entries: CleanEntry[] = extract.candidates.map((c) => {
@@ -592,7 +646,47 @@ export function cleanseVolume(
       e.status = "excluded";
       return;
     }
-    const options: Option[] = [{ reading: e.reading, notation: e.notation }];
+    // 三系統の多数決（読み直しの結果がある候補のみ）
+    const rc = recheck[e.id];
+    const readingC = rc?.reading ? normalizeReading(rc.reading) : undefined;
+    const readingB = e.ndl ? normalizeReading(e.ndl.reading) : undefined;
+    const notationC = normalizeNotation(rc?.notation);
+    const notationB = normalizeNotation(e.ndl?.notation);
+    // NDL 側 OCR と読み直しの表記が一致して元の表記と違う場合は、その表記を先に試す
+    // （両方が同じように誤読することもあるので、照合できなければ元の表記を使う）
+    const notationBC = notationB.notation && !notationB.bad &&
+        notationB.notation === notationC.notation && notationB.notation !== e.notation
+      ? notationB.notation
+      : undefined;
+    let vote: "none" | "agree" | "override" | "conflict" = "none";
+    if (readingC) {
+      const sources = [e.reading, ...(readingB ? [readingB] : []), readingC];
+      const consensus = voteReading(sources);
+      if (consensus === plain(e.reading)) vote = "agree";
+      else if (consensus) {
+        vote = "override";
+        const to = withHyphens(consensus, [readingC, ...(readingB ? [readingB] : []), e.reading]);
+        e.fixes.push({ field: "reading", from: e.reading, to, reason: "三系統の OCR の多数決" });
+        e.reading = to;
+      } else vote = "conflict";
+    }
+
+    const options: Option[] = vote === "conflict"
+      ? [
+        // 決まらないときは、見出しを拡大して読み直した結果を先に試す
+        { reading: readingC!, notation: e.notation, reason: "見出しの読み直し" },
+        { reading: e.reading, notation: e.notation },
+      ]
+      : [{ reading: e.reading, notation: e.notation }];
+    if (notationBC) {
+      options.unshift(
+        ...options.map((o) => ({
+          ...o,
+          notation: notationBC,
+          reason: "NDL 側 OCR と見出しの読み直しの表記が一致",
+        })),
+      );
+    }
     // 表記の先頭の「一」が漢語の記号か本物の「一」かは読みだけでは決まらないので、両方を試す
     if (!e.kango && e.notation.startsWith("一") && e.notation.length >= 2) {
       options.push({
@@ -611,7 +705,7 @@ export function cleanseVolume(
     if (e.ndl && !e.ndl.agree) {
       const r = normalizeReading(e.ndl.reading);
       const nn = normalizeNotation(e.ndl.notation);
-      if (plain(r) !== plain(e.reading)) {
+      if (plain(r) !== plain(e.reading) && (vote === "none")) {
         options.push({ reading: r, notation: e.notation, reason: "NDL 側 OCR の読み" });
       }
       if (nn.notation && !nn.bad && nn.notation !== e.notation) {
@@ -630,7 +724,9 @@ export function cleanseVolume(
     }
 
     const suspicious = e.order === "outlier" || (e.ndl !== undefined && !e.ndl.agree);
-    const r = resolve(options, e.pos, e.kango, suspicious, e.order === "outlier", ctx);
+    // 二系統の OCR が一致した読みは、五十音順から外れていても Unihan での対応付けにかける
+    const outlier = e.order === "outlier" && vote !== "agree" && vote !== "override";
+    const r = resolve(options, e.pos, e.kango, suspicious, outlier, ctx);
     if (r?.method === "L-notation") {
       // 表記の補正は抜き取りで半数近くが誤りだったので適用せず、提案として残して未検証にする
       e.suggestions.push({ ...r.fix!, reason: r.fix!.reason + "（未適用）" });
