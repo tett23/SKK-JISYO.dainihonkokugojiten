@@ -1,0 +1,40 @@
+SKK-JISYO.dainihonkokugojisyo
+Copyright (C) 2026 はちがつうまれ
+
+This program and dictionary are free software; you can redistribute them
+and/or modify them under the terms of the GNU General Public License as
+published by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version. See the file LICENSE.
+
+This program and dictionary are distributed in the hope that they will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+Public License for more details.
+
+--------------------------------------------------------------------------------
+
+Data sources / 出典
+
+This project's data is derived from data published by the National Diet
+Library, Japan (NDL). The source materials below are in the public domain;
+the GNU General Public License applies to this project's code and to the
+dictionaries built by it.
+
+本プロジェクトのデータは、国立国会図書館が公開するデータを元に作成しています。
+
+- 底本: 上田万年・松井簡治 著『大日本国語辞典』第1〜4巻（金港堂書籍, 1915〜1919）
+- 国立国会図書館デジタルコレクション
+  info:ndljp/pid/954645, 954646, 954647, 954648
+  （インターネット公開・保護期間満了 / Public Domain Mark）
+  https://dl.ndl.go.jp/
+- 国立国会図書館「次世代デジタルライブラリー」全文テキスト（Public Domain Mark）
+  https://lab.ndl.go.jp/dl/
+- NDLOCR-Lite (ndlocr-lite), 国立国会図書館, CC BY 4.0
+  https://github.com/ndl-lab/ndlocr-lite
+
+本プロジェクトの成果物は、上記を元に本プロジェクトが抽出・加工・校正したものであり、
+原著者および国立国会図書館が作成したものではありません。
+
+SKK-JISYO.L (SKK Development Team, GPL-2.0-or-later) is used to build the
+dictionary that excludes words already contained in SKK-JISYO.L.
+https://github.com/skk-dev/dict
