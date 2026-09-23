@@ -15,7 +15,8 @@ import { imageFileName, isInternetPublic, ndlUrls, parseManifest } from "./ndl.t
 import { ndlocrLiteConfigFromEnv, runNdlocrLite } from "./ndlocr_lite.ts";
 import { type ExtractVolume, extractVolume } from "./extract.ts";
 import { buildContext, cleanseVolume, type CleanVolume } from "./cleanse.ts";
-import { buildDicts, renderDict, renderReport, renderTsv } from "./build.ts";
+import { buildDicts, forEucJp, renderDict, renderReport, renderTsv } from "./build.ts";
+import { encodeEucJp } from "./eucjp.ts";
 import { compareBuilds } from "./compare.ts";
 // 見出しの切り出し（recheck、review）は画像ライブラリを使うので、そのコマンドのときだけ読み込む。
 // cleanse・build は画像もネットワークも使わずに動く（CI で実行する）
@@ -215,19 +216,36 @@ async function buildStep(pids: string[]) {
   const dicts = buildDicts(volumes, L);
   await ensureDir(DIST_DIR);
   const name = "SKK-JISYO.dainihonkokugojiten";
+  const kinds: [string, keyof typeof dicts, string][] = [
+    [name, "verified", "検証済みのエントリ"],
+    [`${name}.noL`, "noL", "検証済みのうち SKK-JISYO.L に無い候補"],
+    [`${name}.unverified`, "unverified", "検証できなかったエントリ（誤りを多く含む）"],
+  ];
+  // 辞書は UTF-8 版（utf-8/）と、従来の SKK 辞書と同じ EUC-JP 版（euc-jp/）を出す
+  const dropped: string[] = [];
+  for (const encoding of ["utf-8", "euc-jp"] as const) {
+    const dir = join(DIST_DIR, encoding);
+    await ensureDir(dir);
+    for (const [file, key, description] of kinds) {
+      const path = join(dir, file);
+      if (encoding === "utf-8") {
+        await Deno.writeTextFile(path, renderDict(dicts[key], file, description, encoding));
+      } else {
+        const { dict, dropped: n } = forEucJp(dicts[key]);
+        dropped.push(`- ${file}: ${n}`);
+        await Deno.writeFile(path, encodeEucJp(renderDict(dict, file, description, encoding)));
+      }
+      console.log(`  -> ${path}`);
+    }
+  }
   const outputs: [string, string][] = [
-    [name, renderDict(dicts.verified, name, "検証済みのエントリ")],
-    [`${name}.noL`, renderDict(dicts.noL, `${name}.noL`, "検証済みのうち SKK-JISYO.L に無い候補")],
-    [
-      `${name}.unverified`,
-      renderDict(
-        dicts.unverified,
-        `${name}.unverified`,
-        "検証できなかったエントリ（誤りを多く含む）",
-      ),
-    ],
     ["entries.tsv", renderTsv(volumes)],
-    ["report.md", renderReport(volumes, dicts)],
+    [
+      "report.md",
+      renderReport(volumes, dicts) +
+      "\n## EUC-JP 版で除いた候補\n\nJIS X 0208 に無い文字を含む候補の数。\n\n" +
+      dropped.join("\n") + "\n",
+    ],
   ];
   for (const [file, text] of outputs) {
     await Deno.writeTextFile(join(DIST_DIR, file), text);

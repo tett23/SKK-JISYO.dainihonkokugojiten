@@ -102,7 +102,7 @@ ndlocr-lite の実行コマンドは環境変数 `NDLOCR_LITE_CMD` で変更で�
 
 - JMdict のライセンスは、JMdict を使うソフトウェアに最新版からの定期的な更新の手順を求めているので、毎回最新の JMdict を取得してビルドし、毎週リリースし直す。
 - OCR（数時間かかる）はワークフローでは行わない。OCR 済みの見出し語の候補（`data/extract/`、`data/extract-ndl/`、`data/recheck/`）をタグ `inputs` のリリースに置き、それを使う。
-- リリースのアーカイブには、辞書3種、`entries.tsv.gz`、`report.md`、使ったリソースの取得元と取得日時（`resources.json`）、`LICENSE`・`NOTICE`・`LICENSES/`・`README.md` を入れる（[scripts/package-release.sh](scripts/package-release.sh)）。
+- リリースのアーカイブには、辞書3種の UTF-8 版と EUC-JP 版、`entries.tsv.gz`、`report.md`、使ったリソースの取得元と取得日時（`resources.json`）、`LICENSE`・`NOTICE`・`LICENSES/`・`README.md` を入れる（[scripts/package-release.sh](scripts/package-release.sh)）。
 
 バージョンを付けてリリースするには、タグを push する。
 
@@ -150,13 +150,18 @@ data/
 
 ### ビルドされる辞書（`dist/`）
 
-| ファイル                                   | 内容                                                                               |
-| ------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `SKK-JISYO.dainihonkokugojiten`            | 検証済み（SKK-JISYO.L との一致、または Unihan の音訓で読みと表記が対応）のエントリ |
-| `SKK-JISYO.dainihonkokugojiten.noL`        | 上から SKK-JISYO.L にある候補を除いたもの                                          |
-| `SKK-JISYO.dainihonkokugojiten.unverified` | 検証できなかったエントリ。誤りを多く含む                                           |
-| `entries.tsv`                              | 全候補の一覧（状態、検証方法、補正の記録、紙面画像の切り出し URL）                 |
-| `report.md`                                | 件数の内訳                                                                         |
+辞書は UTF-8 版（`utf-8/`）と EUC-JP 版（`euc-jp/`）の2つを出す。ファイル名はどちらも同じ。
+
+| ファイル                                                     | 内容                                                                                       |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `utf-8/SKK-JISYO.dainihonkokugojiten`、`euc-jp/…`            | 検証済み（SKK-JISYO.L・JMdict との一致、または Unihan の音訓で読みと表記が対応）のエントリ |
+| `utf-8/SKK-JISYO.dainihonkokugojiten.noL`、`euc-jp/…`        | 上から SKK-JISYO.L にある候補を除いたもの                                                  |
+| `utf-8/SKK-JISYO.dainihonkokugojiten.unverified`、`euc-jp/…` | 検証できなかったエントリ。誤りを多く含む                                                   |
+| `entries.tsv`                                                | 全候補の一覧（状態、検証方法、補正の記録、紙面画像の切り出し URL）                         |
+| `report.md`                                                  | 件数の内訳                                                                                 |
+
+EUC-JP 版は、従来の SKK 辞書（SKK-JISYO.L など）と同じく ASCII と JIS X 0208 の範囲で符号化する。
+JIS X 0208 に無い文字（一部の旧字体など）を含む候補は EUC-JP 版から除く（除いた数は `report.md` に出す）。多くは旧字体の候補で、同じ語の新字体の候補は残る。
 
 検証済みの辞書の正解率は、無作為抽出 450 件で 99.6%（[docs/cleansing.md](docs/cleansing.md)）。未検証の辞書は約半数が誤り。
 候補には新字体と、底本の字体（旧字体）の両方を入れる。

@@ -1,5 +1,6 @@
 import type { CleanEntry, CleanVolume } from "./cleanse.ts";
 import type { SkkDict } from "./resources.ts";
+import { isEucJpEncodable } from "./eucjp.ts";
 
 /**
  * クレンジング結果から SKK 辞書を作る。
@@ -13,7 +14,7 @@ import type { SkkDict } from "./resources.ts";
 type Notes = Map<string, Set<string>>;
 
 /** 見出し → 候補 → 注釈 */
-type Dict = {
+export type Dict = {
   ari: Map<string, Map<string, Notes>>;
   nasi: Map<string, Map<string, Notes>>;
 };
@@ -94,8 +95,10 @@ function withoutL(dict: Dict, L: SkkDict): Dict {
   return { ari: filter(dict.ari, true), nasi: filter(dict.nasi, false) };
 }
 
-const HEADER = (title: string, description: string, count: number) =>
-  `;; -*- mode: fundamental; coding: utf-8 -*-
+export type Encoding = "utf-8" | "euc-jp";
+
+const HEADER = (title: string, description: string, count: number, encoding: Encoding) =>
+  `;; -*- mode: fundamental; coding: ${encoding} -*-
 ;; ${title}
 ;; ${description}
 ;;
@@ -111,7 +114,7 @@ const HEADER = (title: string, description: string, count: number) =>
 ;;   This publication has included material from the JMdict (EDICT, etc.) dictionary files
 ;;   in accordance with the licence provisions of the Electronic Dictionaries Research Group.
 ;;   https://www.edrdg.org/edrdg/licence.html
-;; 照合・字体の変換に Unihan Database（Copyright © 1991-2026 Unicode, Inc., Unicode License v3）を使用。
+;; 照合・字体の変換に Unihan Database（Copyright (C) 1991-2026 Unicode, Inc., Unicode License v3）を使用。
 ;; 各データの権利表示とライセンスの全文は、配布元の NOTICE と LICENSES/ を参照。
 ;;   https://github.com/tett23/SKK-JISYO.dainihonkokugojiten
 ;; 本辞書は上記を元に加工したものであり、原著者および国立国会図書館が作成したものではない。
@@ -124,7 +127,42 @@ const HEADER = (title: string, description: string, count: number) =>
 ;;
 `;
 
-export function renderDict(dict: Dict, title: string, description: string): string {
+/**
+ * EUC-JP（JIS X 0208）で表せない候補を除く。注釈だけが表せない場合は注釈を除いて候補を残す。
+ * 除いた候補の数を返す
+ */
+export function forEucJp(dict: Dict): { dict: Dict; dropped: number } {
+  let dropped = 0;
+  const filter = (map: Dict["ari"]): Dict["ari"] =>
+    new Map(
+      [...map].filter(([k]) => isEucJpEncodable(k)).map(([k, ws]) => {
+        const kept = new Map<string, Notes>();
+        for (const [w, notes] of ws) {
+          if (!isEucJpEncodable(w)) {
+            dropped++;
+            continue;
+          }
+          kept.set(
+            w,
+            new Map(
+              [...notes].filter(([h]) => isEucJpEncodable(h)).map(([h, labels]) =>
+                [h, labels] as const
+              ),
+            ),
+          );
+        }
+        return [k, kept] as const;
+      }).filter(([, ws]) => ws.size > 0),
+    );
+  return { dict: { ari: filter(dict.ari), nasi: filter(dict.nasi) }, dropped };
+}
+
+export function renderDict(
+  dict: Dict,
+  title: string,
+  description: string,
+  encoding: Encoding = "utf-8",
+): string {
   const line = ([k, ws]: [string, Map<string, Notes>]) =>
     `${k} /${
       [...ws].map(([w, notes]) => {
@@ -135,7 +173,7 @@ export function renderDict(dict: Dict, title: string, description: string): stri
   // SKK の慣習: 送りありは降順、送りなしは昇順
   const ari = [...dict.ari].sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0)).map(line);
   const nasi = [...dict.nasi].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(line);
-  return HEADER(title, description, ari.length + nasi.length) +
+  return HEADER(title, description, ari.length + nasi.length, encoding) +
     ";; okuri-ari entries.\n" + ari.join("\n") + (ari.length ? "\n" : "") +
     ";; okuri-nasi entries.\n" + nasi.join("\n") + "\n";
 }
