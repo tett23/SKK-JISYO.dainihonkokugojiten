@@ -122,6 +122,11 @@ character (kJapanese) and to convert traditional to simplified character forms
 3. Software dependencies / 依存ソフトウェア
 ================================================================================
 
-The Deno standard library (jsr:@std/*, MIT License) is fetched at run time
-and is not included in this repository.
-Deno 標準ライブラリ（jsr:@std/*、MIT License）は実行時に取得し、同梱していません。
+The following libraries are fetched at run time and are not included in this
+repository. 以下のライブラリは実行時に取得し、同梱していません。
+
+- Deno standard library (jsr:@std/*), MIT License
+- ImageScript (jsr:@matmen/imagescript), used under the MIT License
+  (dual-licensed under AGPL-3.0 and MIT)
+  https://github.com/matmen/ImageScript
+  見出しの切り出し（deno task recheck）に使用。

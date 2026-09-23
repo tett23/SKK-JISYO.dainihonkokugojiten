@@ -17,6 +17,9 @@ import { type ExtractVolume, extractVolume } from "./extract.ts";
 import { buildContext, cleanseVolume, type CleanVolume } from "./cleanse.ts";
 import { buildDicts, renderDict, renderReport, renderTsv } from "./build.ts";
 import { compareBuilds } from "./compare.ts";
+// 見出しの切り出し（recheck、review）は画像ライブラリを使うので、そのコマンドのときだけ読み込む。
+// cleanse・build は画像もネットワークも使わずに動く（CI で実行する）
+import type { RecheckVolume } from "./recheck.ts";
 import { fetchResources, loadSkkL, loadUnihan, resourcePaths } from "./resources.ts";
 import { loadJmdict } from "./jmdict.ts";
 import {
@@ -44,6 +47,12 @@ extract  作業用 JSON から見出し語・表記の候補を data/extract/<pi
 resources  クレンジングに使う SKK-JISYO.L と Unihan を取得する。
 cleanse  候補を SKK-JISYO.L・Unihan・NDL 側 OCR と照合して補正し、data/cleanse/<pid>.json に保存する。
 build  クレンジング結果から SKK 辞書とレポートを dist/ に出力する（pid の指定は対象の絞り込み）。
+recheck  検証済み・未検証の候補のうち NDL 側 OCR と読みが一致しないものの見出しを切り出して
+       ndlocr-lite で読み直し、data/recheck/<pid>.json に保存する（検証済みを先に処理する）。
+       --status <accepted|unverified>  対象を絞る
+review  正解率の抜き取り評価用に、区分ごとに候補を無作為に抜き取り、紙面の切り出しと一覧を
+       dist/review/ に出力する。
+       --n <件数>（既定 30） --seed <種>（既定 1） --strata <区分,...>（既定 すべて）
 compare <旧 cleanse ディレクトリ> <新 cleanse ディレクトリ>  2 つのビルドを比べた結果を出力する。
 all    fetch → ocr → work → extract を順に実行する。`;
 
@@ -184,7 +193,10 @@ async function cleanseStep(pids: string[]) {
     console.log(`[cleanse] ${pid}`);
     const extract: ExtractVolume = JSON.parse(await Deno.readTextFile(paths.extractJson(pid)));
     const ndl = await loadNdlCandidates(pid);
-    const result = cleanseVolume(extract, ndl, ctx);
+    const recheck = await Deno.readTextFile(paths.recheckJson(pid))
+      .then((t) => (JSON.parse(t) as RecheckVolume).results)
+      .catch(() => ({}));
+    const result = cleanseVolume(extract, ndl, ctx, recheck);
     const dest = paths.cleanseJson(pid);
     await ensureDir(dirname(dest));
     await Deno.writeTextFile(dest, JSON.stringify(result, null, 2) + "\n");
@@ -226,7 +238,7 @@ async function buildStep(pids: string[]) {
 if (import.meta.main) {
   const args = parseArgs(Deno.args, {
     boolean: ["force", "force-ocr", "help"],
-    string: ["pages", "source"],
+    string: ["pages", "source", "status", "n", "seed", "strata"],
   });
   const [command, ...rest] = args._.map(String);
   if (args.help || !command) {
@@ -251,6 +263,42 @@ if (import.meta.main) {
   }
   if (command === "cleanse") {
     await cleanseStep(pids);
+    Deno.exit(0);
+  }
+  if (command === "recheck") {
+    const { collectResults, makeCrops, ocrCrops, targets } = await import("./recheck.ts");
+    const statuses = args.status ? [args.status] : ["accepted", "unverified"];
+    for (const status of statuses) {
+      for (const pid of pids) {
+        const volume: CleanVolume = JSON.parse(await Deno.readTextFile(paths.cleanseJson(pid)));
+        const list = targets(volume).filter((e) => e.status === status);
+        console.log(`[recheck] ${pid} ${status}: ${list.length} entries`);
+        const count = await makeCrops(pid, list);
+        await ocrCrops(pid, count, ndlocrLiteConfigFromEnv());
+        const results = await collectResults(pid);
+        await ensureDir(dirname(paths.recheckJson(pid)));
+        await Deno.writeTextFile(paths.recheckJson(pid), JSON.stringify(results) + "\n");
+        console.log(
+          `  ${Object.keys(results.results).length} results -> ${paths.recheckJson(pid)}`,
+        );
+      }
+    }
+    Deno.exit(0);
+  }
+  if (command === "review") {
+    const { STRATA, writeReview } = await import("./review.ts");
+    const names = args.strata ? String(args.strata).split(",") : STRATA.map((s) => s.name);
+    const volumes: CleanVolume[] = [];
+    for (const pid of pids) {
+      volumes.push(JSON.parse(await Deno.readTextFile(paths.cleanseJson(pid))));
+    }
+    const out = join(DIST_DIR, "review");
+    await writeReview(volumes, out, {
+      n: Number(args.n ?? 30),
+      seed: Number(args.seed ?? 1),
+      strata: STRATA.filter((s) => names.includes(s.name)),
+    });
+    console.log(`  -> ${out}`);
     Deno.exit(0);
   }
   if (command === "compare") {

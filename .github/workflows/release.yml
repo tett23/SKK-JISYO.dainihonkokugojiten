@@ -1,0 +1,69 @@
+# 辞書をビルドしてリリースする。
+#
+# - バージョンタグ（v*）の push: そのタグのリリースを作る。ハイフンを含むタグ
+#   （v0.4.0-beta.1 など）はプレリリースにする
+# - 毎週日曜 03:00 JST と手動実行: タグ build-YYYYMMDD のプレリリースを作る。
+#   JMdict のライセンス（https://www.edrdg.org/edrdg/licence.html）は、JMdict を使う
+#   ソフトウェアに最新版からの定期的な更新の手順を求めているので、毎週ビルドし直す
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  schedule:
+    - cron: "0 18 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dictionary
+          path: dist/release
+
+      - name: Decide tag
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+            case "$tag" in *-*) prerelease=true ;; *) prerelease=false ;; esac
+          else
+            tag="build-$(date -u +%Y%m%d)"
+            if gh release view "$tag" >/dev/null 2>&1; then tag="$tag-$GITHUB_RUN_NUMBER"; fi
+            prerelease=true
+          fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "PRERELEASE=$prerelease" >> "$GITHUB_ENV"
+
+      - name: Package
+        run: scripts/package-release.sh "$TAG" dist/release "$RUNNER_TEMP"
+
+      - name: Release
+        run: |
+          args=(--title "SKK-JISYO.dainihonkokugojisyo $TAG" --notes-file "$RUNNER_TEMP/notes.md")
+          if [ "$PRERELEASE" = "true" ]; then args+=(--prerelease); fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            args+=(--verify-tag)
+          else
+            args+=(--target "$GITHUB_SHA")
+          fi
+          gh release create "$TAG" "$RUNNER_TEMP/SKK-JISYO.dainihonkokugojisyo-$TAG.tar.gz" "${args[@]}"

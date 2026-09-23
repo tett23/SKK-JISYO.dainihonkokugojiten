@@ -46,6 +46,8 @@ export const paths = {
    * 全文テキスト（1 巻約 60MB）が無い環境（CI）でもクレンジングできるようにキャッシュする
    */
   extractNdlJson: (pid: string) => join(DATA_DIR, "extract-ndl", `${pid}.json`),
+  /** 見出しの切り出しの読み直しの結果 */
+  recheckJson: (pid: string) => join(DATA_DIR, "recheck", `${pid}.json`),
   /** クレンジング結果 */
   cleanseJson: (pid: string) => join(DATA_DIR, "cleanse", `${pid}.json`),
 };
