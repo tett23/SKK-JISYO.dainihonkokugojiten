@@ -53,7 +53,7 @@ export const paths = {
 };
 
 export const USER_AGENT = Deno.env.get("NDL_USER_AGENT") ??
-  "SKK-JISYO.dainihonkokugojisyo/0.1 (+https://github.com/tett23/SKK-JISYO.dainihonkokugojisyo)";
+  "SKK-JISYO.dainihonkokugojiten/1.0 (+https://github.com/tett23/SKK-JISYO.dainihonkokugojiten)";
 
 /** NDL へのリクエスト間隔（ミリ秒）。サーバ負荷を避けるため逐次かつ間隔を空けて取得する。 */
 export const REQUEST_INTERVAL_MS = Number(Deno.env.get("NDL_REQUEST_INTERVAL_MS") ?? "1000");

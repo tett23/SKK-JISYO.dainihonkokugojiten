@@ -1,4 +1,4 @@
-# SKK-JISYO.dainihonkokugojisyo
+# SKK-JISYO.dainihonkokugojiten
 
 『大日本国語辞典』（上田万年・松井簡治 著、金港堂書籍、1915〜1919）をもとに SKK 辞書を作るプロジェクト。
 
@@ -152,9 +152,9 @@ data/
 
 | ファイル                                   | 内容                                                                               |
 | ------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `SKK-JISYO.dainihonkokugojisyo`            | 検証済み（SKK-JISYO.L との一致、または Unihan の音訓で読みと表記が対応）のエントリ |
-| `SKK-JISYO.dainihonkokugojisyo.noL`        | 上から SKK-JISYO.L にある候補を除いたもの                                          |
-| `SKK-JISYO.dainihonkokugojisyo.unverified` | 検証できなかったエントリ。誤りを多く含む                                           |
+| `SKK-JISYO.dainihonkokugojiten`            | 検証済み（SKK-JISYO.L との一致、または Unihan の音訓で読みと表記が対応）のエントリ |
+| `SKK-JISYO.dainihonkokugojiten.noL`        | 上から SKK-JISYO.L にある候補を除いたもの                                          |
+| `SKK-JISYO.dainihonkokugojiten.unverified` | 検証できなかったエントリ。誤りを多く含む                                           |
 | `entries.tsv`                              | 全候補の一覧（状態、検証方法、補正の記録、紙面画像の切り出し URL）                 |
 | `report.md`                                | 件数の内訳                                                                         |
 
