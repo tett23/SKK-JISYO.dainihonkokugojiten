@@ -9,16 +9,74 @@ import type { SkkDict } from "./resources.ts";
  * - SKK-JISYO.dainihonkokugojisyo.unverified: 検証できなかったエントリ（誤りの見積もり用）
  */
 
-type Dict = { ari: Map<string, string[]>; nasi: Map<string, string[]> };
+/** 候補の注釈: 歴史的仮名遣いの読み（現代の読みと同じなら ""）→ 品詞 */
+type Notes = Map<string, Set<string>>;
+
+/** 見出し → 候補 → 注釈 */
+type Dict = {
+  ari: Map<string, Map<string, Notes>>;
+  nasi: Map<string, Map<string, Notes>>;
+};
 
 const skeleton = (w: string) => w.replaceAll(/[ぁ-ゖァ-ヺー]/g, "");
+
+const POS_LABELS: Record<string, string> = {
+  noun: "名",
+  pronoun: "代",
+  numeral: "数",
+  adjective: "形",
+  adverb: "副",
+  makura: "枕",
+  interjection: "感",
+  conjunction: "接",
+  prefix: "接頭",
+  suffix: "接尾",
+};
+
+function posLabel(e: CleanEntry): string {
+  return e.pos.categories.map((c) => {
+    if (c === "verb") return /^(自動|他動)/.exec(e.pos.raw)?.[0] ?? "動";
+    return POS_LABELS[c] ?? "";
+  }).filter(Boolean).join("・");
+}
+
+/** 現代の読みと違う場合の歴史的仮名遣いの読み */
+const historicalOf = (e: CleanEntry) => {
+  const h = e.reading.replaceAll("-", "");
+  return h !== e.modern ? h : "";
+};
+
+/**
+ * 候補の注釈。現代の読みと違う場合は底本の歴史的仮名遣いの読みを、続けて品詞を付ける
+ * （ちょうちょう /蝶蝶;てふてふ（名）/、あしば /足場;（名）/）。
+ * 同じ候補が複数の項目から来た場合は、読みごとに品詞をまとめる（あふぐ（自動・他動））
+ */
+export function renderNotes(notes: Notes): string {
+  return [...notes].map(([h, labels]) => {
+    const l = [...labels].filter(Boolean).join("・");
+    return h + (l ? `（${l}）` : "");
+  }).filter(Boolean).join("、");
+}
+
+export const annotation = (e: CleanEntry) =>
+  renderNotes(new Map([[historicalOf(e), new Set([posLabel(e)])]]));
 
 function addEntry(dict: Dict, e: CleanEntry) {
   if (!e.skkKey || !e.shinjitai || !e.notation) return;
   const map = e.okuri ? dict.ari : dict.nasi;
-  const list = map.get(e.skkKey) ?? [];
-  for (const w of [e.shinjitai, e.notation]) if (!list.includes(w)) list.push(w);
-  map.set(e.skkKey, list);
+  const historical = historicalOf(e);
+  const label = posLabel(e);
+  for (const key of [e.skkKey, ...(e.altSkkKeys ?? [])]) {
+    const words = map.get(key) ?? new Map<string, Notes>();
+    for (const w of [e.shinjitai, e.notation]) {
+      const notes = words.get(w) ?? new Map<string, Set<string>>();
+      const labels = notes.get(historical) ?? new Set<string>();
+      labels.add(label);
+      notes.set(historical, labels);
+      words.set(w, notes);
+    }
+    map.set(key, words);
+  }
 }
 
 function inL(L: SkkDict, key: string, word: string, okuri: boolean): boolean {
@@ -27,10 +85,11 @@ function inL(L: SkkDict, key: string, word: string, okuri: boolean): boolean {
 }
 
 function withoutL(dict: Dict, L: SkkDict): Dict {
-  const filter = (map: Map<string, string[]>, okuri: boolean) =>
+  const filter = (map: Dict["ari"], okuri: boolean): Dict["ari"] =>
     new Map(
-      [...map].map(([k, ws]) => [k, ws.filter((w) => !inL(L, k, w, okuri))] as const)
-        .filter(([, ws]) => ws.length > 0),
+      [...map]
+        .map(([k, ws]) => [k, new Map([...ws].filter(([w]) => !inL(L, k, w, okuri)))] as const)
+        .filter(([, ws]) => ws.size > 0),
     );
   return { ari: filter(dict.ari, true), nasi: filter(dict.nasi, false) };
 }
@@ -66,7 +125,13 @@ const HEADER = (title: string, description: string, count: number) =>
 `;
 
 export function renderDict(dict: Dict, title: string, description: string): string {
-  const line = ([k, ws]: [string, string[]]) => `${k} /${ws.join("/")}/`;
+  const line = ([k, ws]: [string, Map<string, Notes>]) =>
+    `${k} /${
+      [...ws].map(([w, notes]) => {
+        const n = renderNotes(notes);
+        return n ? `${w};${n}` : w;
+      }).join("/")
+    }/`;
   // SKK の慣習: 送りありは降順、送りなしは昇順
   const ari = [...dict.ari].sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0)).map(line);
   const nasi = [...dict.nasi].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(line);
@@ -156,8 +221,8 @@ export function renderReport(
     Object.entries(rec).sort((a, b) => b[1] - a[1])
       .map(([k, n]) => `| ${k} | ${n} | ${(n / all.length * 100).toFixed(1)}% |`).join("\n") +
     "\n";
-  const size = (d: { ari: Map<string, string[]>; nasi: Map<string, string[]> }) => {
-    const words = [...d.ari.values(), ...d.nasi.values()].reduce((s, w) => s + w.length, 0);
+  const size = (d: Dict) => {
+    const words = [...d.ari.values(), ...d.nasi.values()].reduce((s, w) => s + w.size, 0);
     return `送りあり ${d.ari.size} 見出し / 送りなし ${d.nasi.size} 見出し / 候補 ${words}`;
   };
   return `# ビルドレポート

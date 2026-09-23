@@ -43,3 +43,35 @@ Deno.test("parseSkkDict: 送りあり・送りなしと注釈", () => {
   assertEquals(dict.okuriNasi.get("あいこく"), ["愛国", "哀哭"]);
   assertEquals(dict.readingsOf.get("足場"), ["あしば"]);
 });
+
+Deno.test("annotation: 現代の読みと違うときだけ歴史的仮名遣いを付け、品詞を添える", async () => {
+  const { annotation } = await import("./build.ts");
+  const base = {
+    id: "x",
+    frame: 1,
+    bbox: { x: 0, y: 0, width: 0, height: 0 },
+    source: { reading: "", pos: "", line: "" },
+    kango: false,
+    order: "ok" as const,
+    method: "L" as const,
+    status: "accepted" as const,
+    fixes: [],
+    suggestions: [],
+  };
+  assertEquals(
+    annotation({ ...base, reading: "てふ-てふ", modern: "ちょうちょう", pos: normalizePos("名") }),
+    "てふてふ（名）",
+  );
+  assertEquals(
+    annotation({ ...base, reading: "あし-ば", modern: "あしば", pos: normalizePos("名") }),
+    "（名）",
+  );
+  assertEquals(
+    annotation({ ...base, reading: "おもふ", modern: "おもう", pos: normalizePos("他動四") }),
+    "おもふ（他動）",
+  );
+  assertEquals(
+    annotation({ ...base, reading: "いや-まし", modern: "いやまし", pos: normalizePos("名、副") }),
+    "（名・副）",
+  );
+});

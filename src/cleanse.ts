@@ -58,6 +58,12 @@ export type CleanEntry = {
   modern?: string;
   /** SKK の見出し。送りありは "おどろかs" の形 */
   skkKey?: string;
+  /**
+   * 追加の見出し。読みを L・JMdict に合わせて補正した候補（dict-reading）には、補正前の読み
+   * （底本の読みを現代仮名遣いにしたもの）も見出しとして出す。補正が底本の正しい別の読み
+   * （はんにゃ-の-めん → はんにゃめん）を書き換えることがあるため
+   */
+  altSkkKeys?: string[];
   okuri?: boolean;
   ndl?: { reading: string; notation?: string; agree: boolean };
   order: "ok" | "outlier";
@@ -503,7 +509,8 @@ function resolve(
 
 // --- 全体
 
-const EXCLUDED_CATEGORIES = new Set(["makura", "particle", "auxiliary"]);
+/** 助詞・助動詞は変換辞書には不要なので除く（枕詞は表記のまま含める） */
+const EXCLUDED_CATEGORIES = new Set(["particle", "auxiliary"]);
 
 function findNdl(c: Candidate, ndl: NdlCandidate[] | undefined): NdlCandidate | undefined {
   return ndl?.filter((n) => Math.abs(n.x - c.bbox.x) <= 40 && Math.abs(n.y - c.bbox.y) <= 60)
@@ -636,6 +643,14 @@ export function cleanseVolume(
       e.skkKey = r.skkKey;
       e.okuri = r.okuri;
       e.method = r.method;
+      if (r.method === "dict-reading") {
+        // 補正前の読みの現代仮名遣いの候補のうち、補正後の読みに最も近いもの
+        // （はんにや-の-めん → はんにゃのめん。既定の変換だと はんにやのめん になる）
+        const original = modernVariants(e.reading, { kango: e.kango })
+          .filter((v) => v !== r.skkKey)
+          .sort((a, b) => levenshtein(a, r.skkKey) - levenshtein(b, r.skkKey))[0];
+        if (original) e.altSkkKeys = [original];
+      }
       e.status = "accepted";
     } else {
       // 未検証: 既定の変換結果を使う。動詞・形容詞は送り仮名を最後の 1 文字とする
