@@ -90,13 +90,26 @@ NDL への負荷を避けるため、リクエストは逐次で行い、取得�
 
 ndlocr-lite の実行コマンドは環境変数 `NDLOCR_LITE_CMD` で変更できる（既定値は `ndlocr-lite --sourcedir {input} --output {output}`、`{input}`/`{output}` が置換される）。
 
-## 自動ビルドとリリース
+## CI とリリース
 
-[.github/workflows/build-dictionary.yml](.github/workflows/build-dictionary.yml) が毎週日曜 03:00（JST）に辞書をビルドし、GitHub のリリース（タグ `build-YYYYMMDD`、プレリリース）として公開する。Actions の画面から手動でも実行できる。
+| ワークフロー                             | 契機                            | 内容                                                                               |
+| ---------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------- |
+| [CI](.github/workflows/ci.yml)           | push、プルリクエスト            | 整形・lint・型チェック・テストと、辞書のビルド（成果物は Actions の artifact）     |
+| [Release](.github/workflows/release.yml) | バージョンタグ `v*` の push     | そのタグのリリースを作る。ハイフンを含むタグ（`v0.4.0-beta.1` など）はプレリリース |
+| 〃                                       | 毎週日曜 03:00（JST）、手動実行 | タグ `build-YYYYMMDD` のプレリリースを作る                                         |
 
-- JMdict のライセンスは、JMdict を使うソフトウェアに最新版からの定期的な更新の手順を求めているので、毎回最新の JMdict を取得してビルドし直す。
+どちらもビルドは共通の [Build](.github/workflows/build.yml) で行う。
+
+- JMdict のライセンスは、JMdict を使うソフトウェアに最新版からの定期的な更新の手順を求めているので、毎回最新の JMdict を取得してビルドし、毎週リリースし直す。
 - OCR（数時間かかる）はワークフローでは行わない。OCR 済みの見出し語の候補（`data/extract/`、`data/extract-ndl/`、`data/recheck/`）をタグ `inputs` のリリースに置き、それを使う。
-- リリースのアーカイブには、辞書3種、`entries.tsv.gz`、`report.md`、使ったリソースの取得元と取得日時（`resources.json`）、`LICENSE`・`NOTICE`・`LICENSES/`・`README.md` を入れる。
+- リリースのアーカイブには、辞書3種、`entries.tsv.gz`、`report.md`、使ったリソースの取得元と取得日時（`resources.json`）、`LICENSE`・`NOTICE`・`LICENSES/`・`README.md` を入れる（[scripts/package-release.sh](scripts/package-release.sh)）。
+
+バージョンを付けてリリースするには、タグを push する。
+
+```sh
+git tag v0.4.0-beta.1
+git push origin v0.4.0-beta.1
+```
 
 OCR や抽出の処理を変えたときは、入力データを作り直して `inputs` のリリースを更新する。
 

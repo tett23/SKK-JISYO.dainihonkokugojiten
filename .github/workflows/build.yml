@@ -1,0 +1,54 @@
+# 辞書をビルドして成果物（dist/release と取得したリソースの記録）をアップロードする。
+# ci.yml と release.yml から呼び出す。
+#
+# OCR（数時間かかる）はここでは行わない。OCR 済みの見出し語の候補
+# （data/extract/、data/extract-ndl/、data/recheck/）を `deno task pack-inputs` でまとめ、
+# タグ `inputs` のリリースに置いたものを使う。
+name: Build
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DIST_DIR: dist/release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Download inputs (OCR candidates)
+        run: |
+          mkdir -p data
+          gh release download inputs --pattern inputs.tar.gz --dir "$RUNNER_TEMP"
+          tar -xzf "$RUNNER_TEMP/inputs.tar.gz" -C data
+
+      - name: Fetch resources (SKK-JISYO.L, Unihan, latest JMdict)
+        run: deno task resources --force
+
+      - name: Test
+        run: deno task test
+
+      - name: Cleanse
+        run: deno task cleanse
+
+      - name: Build
+        run: deno task build
+
+      - name: Record resources
+        run: jq -s 'map({url, fetchedAt, sha256})' data/raw/resources/*.fetch.json > "$DIST_DIR/resources.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dictionary
+          path: dist/release/
+          retention-days: 14

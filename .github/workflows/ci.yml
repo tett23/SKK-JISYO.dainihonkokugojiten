@@ -1,0 +1,31 @@
+# push とプルリクエストごとに、整形・lint・型チェック・テストと辞書のビルドを確かめる。
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - run: deno fmt --check
+      - run: deno lint
+      - run: deno check src/*.ts
+      # Unihan が無いので、Unihan を使うテストは飛ばされる（build ジョブで実行する）
+      - run: deno task test
+
+  build:
+    uses: ./.github/workflows/build.yml
