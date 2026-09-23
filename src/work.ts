@@ -2,7 +2,7 @@ import { relative } from "@std/path";
 import { DATA_DIR, paths } from "./config.ts";
 import { type FetchRecord, readRecord } from "./http.ts";
 import { type Canvas, parseLabCoords, parseLabFulltext, parseManifest } from "./ndl.ts";
-import { findLatestNdlocrXml, parseNdlocrXml } from "./ndlocr.ts";
+import { listNdlocrLiteXmls, parseNdlocrXml } from "./ndlocr_lite.ts";
 
 export type WorkLine = {
   text: string;
@@ -11,14 +11,14 @@ export type WorkLine = {
   width: number;
   height: number;
   conf?: number;
-  /** ndlocr_cli の行種別（本文、キャプション等） */
+  /** ndlocr-lite の行種別（本文、キャプション等） */
   type?: string;
 };
 
 export type WorkPage = {
   /** コマ番号（IIIF canvas の 1 始まりの連番。見開き 1 コマに 2 ページ分を含むことがある） */
   frame: number;
-  /** ndlocr_cli がノド元分割した場合の画像名 */
+  /** OCR した画像のファイル名 */
   imageName?: string;
   width?: number;
   height?: number;
@@ -26,12 +26,13 @@ export type WorkPage = {
   text: string;
   /**
    * 認識単位ごとのテキストと座標（画像ピクセル座標）。
-   * ndl-lab-fulltext では NDL の OCR が返す行（段をまたいで読み順が乱れることがある）、ndlocr では行。
+   * ndl-lab-fulltext では NDL の OCR が返す断片（段をまたいで読み順が乱れることがある）、
+   * ndlocr-lite では縦 1 列分の行（読み順）。
    */
   lines: WorkLine[];
 };
 
-export type WorkSource = "ndl-lab-fulltext" | "ndlocr";
+export type WorkSource = "ndl-lab-fulltext" | "ndlocr-lite";
 
 export type WorkVolume = {
   schemaVersion: 1;
@@ -82,37 +83,41 @@ async function fromLabFulltext(pid: string, canvases: Map<number, Canvas>) {
   return { rawPath: paths.labFulltextJson(pid), sha256: record.sha256, pages };
 }
 
-async function fromNdlocr(pid: string, canvases: Map<number, Canvas>) {
-  const xmlPath = await findLatestNdlocrXml(pid);
-  if (!xmlPath) {
-    throw new Error(`${pid}: ndlocr_cli の出力 XML が見つかりません。ocr を先に実行してください`);
+async function fromNdlocrLite(pid: string, canvases: Map<number, Canvas>) {
+  const xmls = await listNdlocrLiteXmls(pid);
+  if (xmls.length === 0) {
+    throw new Error(`${pid}: ndlocr-lite の出力 XML が見つかりません。ocr を先に実行してください`);
   }
-  const pages = parseNdlocrXml(await Deno.readTextFile(xmlPath)).map((p): WorkPage => {
-    const frame = Number(p.imageName.match(/R(\d{7})/)?.[1] ?? NaN);
-    return {
-      frame,
-      imageName: p.imageName,
-      width: p.width,
-      height: p.height,
-      imageUrl: canvases.get(frame)?.imageUrl,
-      text: p.lines.map((l) => l.text).join("\n"),
-      lines: p.lines.map(({ text, x, y, width, height, conf, type }) => ({
-        text,
-        x,
-        y,
-        width,
-        height,
-        conf,
-        type,
-      })),
-    };
-  });
-  return { rawPath: xmlPath, sha256: undefined, pages };
+  const pages: WorkPage[] = [];
+  for (const xmlPath of xmls) {
+    for (const p of parseNdlocrXml(await Deno.readTextFile(xmlPath))) {
+      const frame = Number(p.imageName.match(/R(\d{7})/)?.[1] ?? NaN);
+      pages.push({
+        frame,
+        imageName: p.imageName,
+        width: p.width,
+        height: p.height,
+        imageUrl: canvases.get(frame)?.imageUrl,
+        text: p.lines.map((l) => l.text).join("\n"),
+        lines: p.lines.map(({ text, x, y, width, height, conf, type }) => ({
+          text,
+          x,
+          y,
+          width,
+          height,
+          conf,
+          type,
+        })),
+      });
+    }
+  }
+  pages.sort((a, b) => a.frame - b.frame);
+  return { rawPath: paths.rawNdlocrLite(pid), sha256: undefined, pages };
 }
 
 /**
  * 生データから作業用 JSON を生成する。
- * source 未指定時は ndlocr_cli の結果があればそれを、なければ NDLラボの全文テキストを使う。
+ * source 未指定時は ndlocr-lite の結果があればそれを、なければ NDLラボの全文テキストを使う。
  */
 export async function buildWork(pid: string, source?: WorkSource): Promise<WorkVolume> {
   const book = await readJson<LabBook>(paths.labBookJson(pid));
@@ -121,13 +126,13 @@ export async function buildWork(pid: string, source?: WorkSource): Promise<WorkV
   );
 
   const kind: WorkSource = source ??
-    ((await findLatestNdlocrXml(pid))
-      ? "ndlocr"
+    ((await listNdlocrLiteXmls(pid)).length > 0
+      ? "ndlocr-lite"
       : (await hasLabFulltext(pid))
       ? "ndl-lab-fulltext"
-      : "ndlocr");
-  const { rawPath, sha256, pages } = kind === "ndlocr"
-    ? await fromNdlocr(pid, canvases)
+      : "ndlocr-lite");
+  const { rawPath, sha256, pages } = kind === "ndlocr-lite"
+    ? await fromNdlocrLite(pid, canvases)
     : await fromLabFulltext(pid, canvases);
 
   return {

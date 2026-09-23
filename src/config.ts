@@ -31,10 +31,10 @@ export const paths = {
   labBookJson: (pid: string) => join(paths.rawNdl(pid), "lab-book.json"),
   labFulltextJson: (pid: string) => join(paths.rawNdl(pid), "lab-fulltext.json"),
   imagesDir: (pid: string) => join(paths.rawNdl(pid), "images"),
-  /** ndlocr_cli の出力をそのまま保存するディレクトリ */
-  rawNdlocr: (pid: string) => join(DATA_DIR, "raw", "ndlocr", pid),
-  /** ndlocr_cli の入力用（single input dir mode: <root>/img/*.jpg） */
-  ndlocrInput: (pid: string) => join(DATA_DIR, "tmp", "ndlocr-input", pid),
+  /** ndlocr-lite の出力（画像ごとの xml/json/txt）をそのまま保存するディレクトリ */
+  rawNdlocrLite: (pid: string) => join(DATA_DIR, "raw", "ndlocr-lite", pid),
+  /** ndlocr-lite の入力用（未処理の画像へのハードリンク） */
+  ndlocrLiteInput: (pid: string) => join(DATA_DIR, "tmp", "ndlocr-lite-input", pid),
   workJson: (pid: string) => join(DATA_DIR, "work", `${pid}.json`),
 };
 

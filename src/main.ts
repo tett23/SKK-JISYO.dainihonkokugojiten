@@ -11,22 +11,21 @@ import {
 } from "./config.ts";
 import { BlockedError, download } from "./http.ts";
 import { imageFileName, isInternetPublic, ndlUrls, parseManifest } from "./ndl.ts";
-import { ndlocrConfigFromEnv, runNdlocr } from "./ndlocr.ts";
-import { buildWork, hasLabFulltext, type WorkSource } from "./work.ts";
+import { ndlocrLiteConfigFromEnv, runNdlocrLite } from "./ndlocr_lite.ts";
+import { buildWork, type WorkSource } from "./work.ts";
 
 const USAGE = `Usage: deno task <fetch|ocr|work|all> [options] [pid...]
 
 pid を省略すると初版全4巻 (${DEFAULT_VOLUMES.map((v) => v.pid).join(", ")}) を対象にする。
 
-fetch  NDL から書誌・IIIF manifest・NDLラボ全文テキストを取得して data/raw/ndl/<pid>/ に保存する。
-       全文テキストが無い（画像のみの）資料は画像も取得する。
-  --images         全文テキストがあっても画像を取得する
+fetch  NDL から書誌・IIIF manifest・NDLラボ全文テキスト・画像を取得して data/raw/ndl/<pid>/ に保存する。
   --pages <a-b>    画像を取得するコマ範囲（例: 10-20）
   --force          取得済みでも再取得する
-ocr    画像のみの資料に ndlocr_cli を実行し、出力を data/raw/ndlocr/<pid>/ に保存する。
-  --force-ocr      NDL の全文テキストがある資料にも実行する（all では画像も取得する）
+ocr    画像に ndlocr-lite を実行し、出力を data/raw/ndlocr-lite/<pid>/ に保存する。
+       OCR 済みの画像はスキップする（中断しても続きから処理する）。
+  --force-ocr      既存の出力を退避し、全画像を OCR し直す
 work   生データから作業用 JSON を data/work/<pid>.json に生成する。
-  --source <ndl-lab-fulltext|ndlocr>  使用する生データ（既定: ndlocr の結果があれば ndlocr）
+  --source <ndl-lab-fulltext|ndlocr-lite>  使用する生データ（既定: ndlocr-lite の結果があれば ndlocr-lite）
 all    fetch → ocr → work を順に実行する。`;
 
 function parsePages(s: string | undefined): ((frame: number) => boolean) | undefined {
@@ -59,7 +58,7 @@ async function downloadImage(url: string, dest: string, force: boolean) {
   }
 }
 
-async function fetchVolume(pid: string, opts: { force: boolean; images: boolean; pages?: string }) {
+async function fetchVolume(pid: string, opts: { force: boolean; pages?: string }) {
   const force = opts.force;
   console.log(`[fetch] ${pid}`);
   // 初版以外が混入しないよう、刊行年を確認してから他のデータを取得する
@@ -95,10 +94,6 @@ async function fetchVolume(pid: string, opts: { force: boolean; images: boolean;
   const ft = await download(ndlUrls.labFulltext(pid), paths.labFulltextJson(pid), { force });
   console.log(`  fulltext ${ft}: ${paths.labFulltextJson(pid)}`);
 
-  if (ft !== "missing" && !opts.images) {
-    console.log("  NDL の全文テキストがあるため画像は取得しません（--images で取得）");
-    return;
-  }
   const inRange = parsePages(opts.pages) ?? (() => true);
   const canvases = parseManifest(JSON.parse(await Deno.readTextFile(paths.manifestJson(pid))))
     .filter((c) => inRange(c.frame));
@@ -113,11 +108,7 @@ async function fetchVolume(pid: string, opts: { force: boolean; images: boolean;
 
 async function ocrVolume(pid: string, opts: { forceOcr: boolean }) {
   console.log(`[ocr] ${pid}`);
-  if (!opts.forceOcr && (await hasLabFulltext(pid))) {
-    console.log("  NDL の全文テキストがあるためスキップします（--force-ocr で実行）");
-    return;
-  }
-  await runNdlocr(pid, ndlocrConfigFromEnv());
+  await runNdlocrLite(pid, ndlocrLiteConfigFromEnv(), { force: opts.forceOcr });
 }
 
 async function workVolume(pid: string, source?: WorkSource) {
@@ -131,7 +122,7 @@ async function workVolume(pid: string, source?: WorkSource) {
 
 if (import.meta.main) {
   const args = parseArgs(Deno.args, {
-    boolean: ["force", "force-ocr", "images", "help"],
+    boolean: ["force", "force-ocr", "help"],
     string: ["pages", "source"],
   });
   const [command, ...rest] = args._.map(String);
@@ -141,7 +132,7 @@ if (import.meta.main) {
   }
   const pids = rest.length > 0 ? rest : DEFAULT_VOLUMES.map((v) => v.pid);
   const source = args.source as WorkSource | undefined;
-  if (source && source !== "ndl-lab-fulltext" && source !== "ndlocr") {
+  if (source && source !== "ndl-lab-fulltext" && source !== "ndlocr-lite") {
     console.error(`unknown --source: ${source}`);
     Deno.exit(1);
   }
@@ -149,7 +140,6 @@ if (import.meta.main) {
   const opts = {
     force: args.force,
     forceOcr: args["force-ocr"],
-    images: args.images,
     pages: args.pages,
   };
   for (const pid of pids) {
@@ -164,7 +154,7 @@ if (import.meta.main) {
         await workVolume(pid, source);
         break;
       case "all":
-        await fetchVolume(pid, { ...opts, images: opts.images || opts.forceOcr });
+        await fetchVolume(pid, opts);
         await ocrVolume(pid, opts);
         await workVolume(pid, source);
         break;
