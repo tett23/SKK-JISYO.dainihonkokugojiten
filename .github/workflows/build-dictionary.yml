@@ -1,0 +1,91 @@
+# 最新の JMdict を取得して辞書をビルドし、リリースする。
+#
+# JMdict のライセンス（https://www.edrdg.org/edrdg/licence.html）は、JMdict を使うソフトウェアに
+# 最新版からの定期的な更新の手順を求めているので、毎週ビルドし直す。
+#
+# OCR（数時間かかる）はこのワークフローでは行わない。OCR 済みの見出し語の候補
+# （data/extract/、data/extract-ndl/）を `deno task pack-inputs` でまとめ、タグ `inputs` の
+# リリースに置いたものを使う。
+name: Build dictionary
+
+on:
+  schedule:
+    # 毎週日曜 03:00 JST
+    - cron: "0 18 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-dictionary
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DIST_DIR: dist/release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Download inputs (OCR candidates)
+        run: |
+          mkdir -p data
+          gh release download inputs --pattern inputs.tar.gz --dir "$RUNNER_TEMP"
+          tar -xzf "$RUNNER_TEMP/inputs.tar.gz" -C data
+
+      - name: Fetch resources (SKK-JISYO.L, Unihan, latest JMdict)
+        run: deno task resources --force
+
+      - name: Test
+        run: deno task test
+
+      - name: Cleanse
+        run: deno task cleanse
+
+      - name: Build
+        run: deno task build
+
+      - name: Package
+        run: |
+          tag="build-$(date -u +%Y%m%d)"
+          if gh release view "$tag" >/dev/null 2>&1; then tag="$tag-$GITHUB_RUN_NUMBER"; fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+
+          name="SKK-JISYO.dainihonkokugojisyo-$tag"
+          pkg="$RUNNER_TEMP/$name"
+          mkdir -p "$pkg"
+          cp "$DIST_DIR"/SKK-JISYO.* "$DIST_DIR/report.md" "$pkg/"
+          gzip -c "$DIST_DIR/entries.tsv" > "$pkg/entries.tsv.gz"
+          cp README.md LICENSE NOTICE "$pkg/"
+          cp -R LICENSES "$pkg/"
+          # 使ったリソースの取得元・取得日時・SHA-256
+          jq -s 'map({url, fetchedAt, sha256})' data/raw/resources/*.fetch.json > "$pkg/resources.json"
+          tar -czf "$RUNNER_TEMP/$name.tar.gz" -C "$RUNNER_TEMP" "$name"
+          echo "ASSET=$RUNNER_TEMP/$name.tar.gz" >> "$GITHUB_ENV"
+
+          {
+            echo "大日本国語辞典（1915-1919）を元にした SKK 辞書のベータ版です。OCR の誤りを含みます。"
+            echo
+            echo "- ビルド: $(date -u +%Y-%m-%dT%H:%M:%SZ)（commit ${GITHUB_SHA::7}）"
+            jq -r '.[] | "- \(.url)（取得 \(.fetchedAt)）"' "$pkg/resources.json"
+            echo
+            echo "権利表示とライセンスは同梱の NOTICE、LICENSE（GPL-3.0-or-later）、LICENSES/ を参照してください。"
+            echo "This publication has included material from the JMdict (EDICT, etc.) dictionary files in accordance with the licence provisions of the Electronic Dictionaries Research Group."
+            echo
+            cat "$DIST_DIR/report.md"
+          } > "$RUNNER_TEMP/notes.md"
+
+      - name: Release
+        run: |
+          gh release create "$TAG" "$ASSET" \
+            --title "SKK-JISYO.dainihonkokugojisyo $TAG (beta)" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --prerelease

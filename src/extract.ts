@@ -109,7 +109,7 @@ export function detectTiers(lines: WorkLine[], p = EXTRACT_PARAMS): number[] {
 
 type RawCandidate = Omit<Candidate, "id">;
 
-/** 1 コマ（見開き）から候補を読み順で抽出する */
+/** 1 コマ（見開き）から候補を紙面の読み順（右ページ→左ページ、上の段→下の段、右の列→左の列）で抽出する */
 export function extractPage(page: WorkPage, p = EXTRACT_PARAMS): RawCandidate[] {
   const width = page.width ?? Math.max(0, ...page.lines.map((l) => l.x + l.width));
   const sideOf = (l: WorkLine): Side => (l.x + l.width / 2 >= width / 2 ? "R" : "L");
@@ -118,17 +118,22 @@ export function extractPage(page: WorkPage, p = EXTRACT_PARAMS): RawCandidate[] 
     L: detectTiers(page.lines.filter((l) => sideOf(l) === "L"), p),
   };
 
-  const out: RawCandidate[] = [];
+  const out: (RawCandidate & { sortTier: number })[] = [];
   for (const l of page.lines) {
     const head = parseHead(l.text);
     if (!head) continue;
     const side = sideOf(l);
-    const tier = tiers[side].findIndex((t) => Math.abs(l.y - t) <= p.tierMargin);
+    const ts = tiers[side];
+    const tier = ts.findIndex((t) => Math.abs(l.y - t) <= p.tierMargin);
+    // 並べ替え用には、範囲外でも最も近い段に割り当てる
+    const nearest = ts.length === 0
+      ? 0
+      : ts.reduce((best, t, i) => Math.abs(l.y - t) < Math.abs(l.y - ts[best]) ? i : best, 0);
     out.push({
       frame: page.frame,
       side,
       tier: tier < 0 ? undefined : tier + 1,
-      offset: tier < 0 ? undefined : l.y - tiers[side][tier],
+      offset: tier < 0 ? undefined : l.y - ts[tier],
       reading: head.reading,
       notation: head.notation,
       notationKind: head.notation ? "written" : "none",
@@ -137,9 +142,16 @@ export function extractPage(page: WorkPage, p = EXTRACT_PARAMS): RawCandidate[] 
       line: l.text,
       conf: l.conf,
       bbox: { x: l.x, y: l.y, width: l.width, height: l.height },
+      sortTier: nearest,
     });
   }
-  return out;
+  // ndlocr-lite の読み順は段の順を取り違えることがあるので、座標で並べ直す
+  const sideOrder = { R: 0, L: 1 };
+  return out
+    .sort((a, b) =>
+      sideOrder[a.side] - sideOrder[b.side] || a.sortTier - b.sortTier || b.bbox.x - a.bbox.x
+    )
+    .map(({ sortTier: _, ...c }) => c);
 }
 
 export function extractVolume(work: WorkVolume): ExtractVolume {

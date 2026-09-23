@@ -3,7 +3,7 @@ Copyright (C) 2026 はちがつうまれ
 
 This program and dictionary are free software; you can redistribute them
 and/or modify them under the terms of the GNU General Public License as
-published by the Free Software Foundation; either version 2 of the License,
+published by the Free Software Foundation; either version 3 of the License,
 or (at your option) any later version. See the file LICENSE.
 
 This program and dictionary are distributed in the hope that they will be
@@ -11,16 +11,25 @@ useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 Public License for more details.
 
---------------------------------------------------------------------------------
+The copyright notice above covers the contributions of this project. Material
+derived from the third-party sources listed below remains subject to the
+notices and licences of those sources, and no copyright is claimed over it by
+this project.
 
-Data sources / 出典
+上記の著作権表示は本プロジェクトの寄与部分に対するものです。以下の第三者の資料に
+由来する部分は、それぞれの権利表示とライセンスに従い、本プロジェクトはその部分の
+著作権を主張しません。
+
+================================================================================
+1. Source text / 底本と本文データ
+================================================================================
 
 This project's data is derived from data published by the National Diet
-Library, Japan (NDL). The source materials below are in the public domain;
-the GNU General Public License applies to this project's code and to the
-dictionaries built by it.
+Library, Japan (NDL). The source materials below are in the public domain
+(Public Domain Mark) and may be freely reused.
 
 本プロジェクトのデータは、国立国会図書館が公開するデータを元に作成しています。
+底本のデータは保護期間満了（Public Domain Mark）であり、自由に二次利用できます。
 
 - 底本: 上田万年・松井簡治 著『大日本国語辞典』第1〜4巻（金港堂書籍, 1915〜1919）
 - 国立国会図書館デジタルコレクション
@@ -29,12 +38,90 @@ dictionaries built by it.
   https://dl.ndl.go.jp/
 - 国立国会図書館「次世代デジタルライブラリー」全文テキスト（Public Domain Mark）
   https://lab.ndl.go.jp/dl/
-- NDLOCR-Lite (ndlocr-lite), 国立国会図書館, CC BY 4.0
+- OCR: NDLOCR-Lite (ndlocr-lite), 国立国会図書館, CC BY 4.0
   https://github.com/ndl-lab/ndlocr-lite
+  （本プロジェクトは ndlocr-lite を同梱せず、実行して得た OCR 結果を使用しています）
 
 本プロジェクトの成果物は、上記を元に本プロジェクトが抽出・加工・校正したものであり、
 原著者および国立国会図書館が作成したものではありません。
 
-SKK-JISYO.L (SKK Development Team, GPL-2.0-or-later) is used to build the
-dictionary that excludes words already contained in SKK-JISYO.L.
-https://github.com/skk-dev/dict
+The dictionaries are modified from the above: headwords, readings and
+notations were extracted from OCR results, corrected, converted from
+historical to modern kana orthography and from traditional to simplified
+character forms by this project.
+
+================================================================================
+2. Resources used for cleansing / クレンジングに使用したデータ
+================================================================================
+
+These resources are downloaded at build time and are not redistributed in
+this repository. Readings, notations and okurigana in the built dictionaries
+were validated and in part corrected against them, so the dictionaries
+contain material derived from them.
+
+以下のデータはビルド時に取得し、このリポジトリには同梱していません。
+ビルドした辞書の読み・表記・送り仮名はこれらと照合し、一部はこれらを根拠に補正して
+いるため、辞書にはこれらに由来する内容が含まれます。
+
+--------------------------------------------------------------------------------
+2.1 SKK-JISYO.L
+--------------------------------------------------------------------------------
+
+Large size dictionary for SKK system
+Copyright (C) 1988-1995, 1997, 1999-2014
+  Masahiko Sato, Hironobu Takahashi, Masahiro Doteguchi, Miki Inooka,
+  Yukiyoshi Kameyama, Akihiko Sasaki, Dai Ando, Junichi Okukawa,
+  Katsushi Sato and Nobuhiro Yamagishi, NAKAJIMA Mikio, MITA Yuusuke,
+  SKK Development Team
+Licence: GNU General Public License, version 2 or (at your option) any later
+version. Used here under version 3.
+https://github.com/skk-dev/dict (commit 0a164e6b990c5eb5b59eb7d8789f08865dc2f644)
+
+Used to validate and correct readings, notations and okurigana, and to build
+the dictionary that excludes words already contained in SKK-JISYO.L.
+読み・表記・送り仮名の照合と補正、SKK-JISYO.L に含まれる語を除いた辞書の作成に使用。
+
+--------------------------------------------------------------------------------
+2.2 JMdict
+--------------------------------------------------------------------------------
+
+This publication has included material from the JMdict (EDICT, etc.)
+dictionary files in accordance with the licence provisions of the Electronic
+Dictionaries Research Group. This package uses the JMdict dictionary files.
+These files are the property of the Electronic Dictionary Research and
+Development Group, and are used in conformance with the Group's licence.
+
+- Project: https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project
+- Licence: Creative Commons Attribution-ShareAlike 4.0 International
+  https://www.edrdg.org/edrdg/licence.html
+  https://creativecommons.org/licenses/by-sa/4.0/ (full text: LICENSES/CC-BY-SA-4.0.txt)
+- Changes: JMdict entries are not redistributed. Their kanji forms, readings,
+  old-kana flags and parts of speech were used to validate and correct the
+  readings and okurigana of this project's entries. The resulting adaptation
+  is distributed under the GNU General Public License version 3 or later,
+  which Creative Commons lists as a compatible licence for BY-SA 4.0.
+
+読み・表記・品詞・送り仮名の照合と補正に使用。CC BY-SA 4.0 の素材に由来する内容を
+含むため、本プロジェクトは GPL バージョン3以降で配布します（CC BY-SA 4.0 は GPLv3 と
+一方向で互換）。JMdict は日々更新されるため、ビルド時に最新版を取得します。
+
+--------------------------------------------------------------------------------
+2.3 Unihan Database
+--------------------------------------------------------------------------------
+
+Copyright © 1991-2026 Unicode, Inc.
+Licence: Unicode License v3 (full text: LICENSES/Unicode-3.0.txt)
+https://www.unicode.org/license.txt
+
+Used to align readings with notations by the Japanese readings of each
+character (kJapanese) and to convert traditional to simplified character forms
+(kJapaneseNewVariant).
+漢字の音訓による読みと表記の照合、旧字体から新字体への変換に使用。
+
+================================================================================
+3. Software dependencies / 依存ソフトウェア
+================================================================================
+
+The Deno standard library (jsr:@std/*, MIT License) is fetched at run time
+and is not included in this repository.
+Deno 標準ライブラリ（jsr:@std/*、MIT License）は実行時に取得し、同梱していません。

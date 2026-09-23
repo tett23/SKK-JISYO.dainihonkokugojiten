@@ -4,8 +4,13 @@
     "ocr": "deno run --allow-read --allow-write --allow-env --allow-run src/main.ts ocr",
     "work": "deno run --allow-read --allow-write --allow-env src/main.ts work",
     "extract": "deno run --allow-read --allow-write --allow-env src/main.ts extract",
+    "resources": "deno run --allow-net --allow-read --allow-write --allow-env src/main.ts resources",
+    "cleanse": "deno run --allow-read --allow-write --allow-env --allow-run src/main.ts cleanse",
+    "build": "deno run --allow-read --allow-write --allow-env src/main.ts build",
+    "compare": "deno run --allow-read --allow-env src/main.ts compare",
+    "pack-inputs": "mkdir -p dist && tar -czf dist/inputs.tar.gz -C data extract extract-ndl",
     "all": "deno run --allow-net --allow-read --allow-write --allow-env --allow-run src/main.ts all",
-    "test": "deno test --allow-read --allow-write --allow-env"
+    "test": "deno test --allow-read --allow-write --allow-env --allow-run"
   },
   "imports": {
     "@std/assert": "jsr:@std/assert@^1",

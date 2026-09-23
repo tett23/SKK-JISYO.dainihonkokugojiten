@@ -23,6 +23,9 @@ const ROOT = fromFileUrl(new URL("..", import.meta.url));
 
 export const DATA_DIR = Deno.env.get("DATA_DIR") ?? join(ROOT, "data");
 
+/** ビルドした辞書・レポートの出力先 */
+export const DIST_DIR = Deno.env.get("DIST_DIR") ?? join(ROOT, "dist");
+
 export const paths = {
   /** NDL から取得したデータをそのまま保存するディレクトリ */
   rawNdl: (pid: string) => join(DATA_DIR, "raw", "ndl", pid),
@@ -38,6 +41,13 @@ export const paths = {
   workJson: (pid: string) => join(DATA_DIR, "work", `${pid}.json`),
   /** 見出し語・表記の候補 */
   extractJson: (pid: string) => join(DATA_DIR, "extract", `${pid}.json`),
+  /**
+   * NDL 側 OCR（NDLラボ全文テキスト）から取り出した見出し語の候補。
+   * 全文テキスト（1 巻約 60MB）が無い環境（CI）でもクレンジングできるようにキャッシュする
+   */
+  extractNdlJson: (pid: string) => join(DATA_DIR, "extract-ndl", `${pid}.json`),
+  /** クレンジング結果 */
+  cleanseJson: (pid: string) => join(DATA_DIR, "cleanse", `${pid}.json`),
 };
 
 export const USER_AGENT = Deno.env.get("NDL_USER_AGENT") ??
