@@ -2,7 +2,7 @@
 
 『大日本国語辞典』（上田万年・松井簡治 著、金港堂書籍、1915〜1919）をもとに SKK 辞書を作るプロジェクト。
 
-現段階では、国立国会図書館（NDL）から本文データを取得し、見出し語と表記の候補を抽出するところまでを実装している。
+国立国会図書館（NDL）から本文データを取得して OCR し、見出し語と表記の候補を抽出・クレンジングして SKK 辞書（ベータ版）をビルドする。
 
 ## 対象資料
 
@@ -30,6 +30,14 @@ NDLデジタルコレクションでインターネット公開されている�
 本プロジェクトの成果物は、上記を元に本プロジェクトが抽出・加工・校正したものであり、原著者および国立国会図書館が作成したものではない。
 底本のデータは保護期間満了（Public Domain Mark）であり、自由に二次利用できる。
 
+読み・表記の照合と補正には次のデータを使い、辞書にはこれらに由来する内容が含まれる（ビルド時に取得し、リポジトリには同梱しない）。
+権利表示の全文は [NOTICE](NOTICE)、ライセンスの本文は [LICENSES/](LICENSES/) を参照。
+
+- [SKK-JISYO.L](https://github.com/skk-dev/dict)（SKK Development Team ほか, GPL-2.0-or-later）
+- [JMdict](https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project)（Electronic Dictionary Research and Development Group, [CC BY-SA 4.0](https://www.edrdg.org/edrdg/licence.html)）。
+  This publication has included material from the JMdict (EDICT, etc.) dictionary files in accordance with the licence provisions of the Electronic Dictionaries Research Group.
+- [Unihan Database](https://www.unicode.org/charts/unihan.html)（Unicode, Inc., [Unicode License v3](LICENSES/Unicode-3.0.txt)）
+
 ## 権利関係
 
 - 底本の著者は上田万年（1937年没）と松井簡治（1945年没）。共同著作物の保護期間は最後に亡くなった著作者の死後50年なので、1995年末に満了している。2018年の70年への延長は、その時点で権利が残っていた著作物にしか適用されない（TPP整備法附則7条）。戦時加算は連合国民の著作物だけが対象なので関係しない。
@@ -39,11 +47,12 @@ NDLデジタルコレクションでインターネット公開されている�
 
 ## ライセンス
 
-GNU General Public License バージョン2、または（選択により）それ以降のバージョン（GPL-2.0-or-later）。
+GNU General Public License バージョン3、または（選択により）それ以降のバージョン（GPL-3.0-or-later）。
 本文は [LICENSE](LICENSE)、著作権表示と出典は [NOTICE](NOTICE) を参照。
 
-SKK-JISYO.L（GPL-2.0-or-later）に含まれる語を除いた辞書も作るため、SKK-JISYO.L と同じライセンスにしている。
-底本と NDL のデータはパブリックドメインであり、このライセンスはこのリポジトリのコードと、ここで作る辞書に適用される。
+- 読み・表記の照合と補正に JMdict（CC BY-SA 4.0）を使い、その内容が辞書に反映される。CC BY-SA 4.0 は GPLv3 とは互換（一方向）だが GPLv2 とは互換でないため、GPLv3 以降とする。
+- SKK-JISYO.L（GPL-2.0-or-later）は、照合と、L に含まれる語を除いた辞書の作成に使う。「バージョン2以降」なので GPLv3 で扱える。
+- 底本と NDL のデータはパブリックドメインであり、このライセンスはこのリポジトリのコードと、ここで作る辞書に適用される。
 
 ## 使い方
 
@@ -55,6 +64,11 @@ deno task ocr     # 画像に ndlocr-lite を実行
 deno task work    # 生データから作業用 JSON を生成
 deno task extract # 作業用 JSON から見出し語・表記の候補を抽出
 deno task all     # 上記を順に実行
+
+deno task resources # クレンジングに使う SKK-JISYO.L・Unihan・JMdict を取得
+deno task cleanse   # 候補を照合・補正して data/cleanse/<pid>.json に保存
+deno task build     # SKK 辞書とレポートを dist/ に出力（DIST_DIR で出力先を変えられる）
+deno task compare <旧 cleanse> <新 cleanse>  # 2 つのビルドを比べる
 ```
 
 PID を引数に渡すと対象を絞れる（例: `deno task fetch 954645`）。オプションは `deno run src/main.ts --help` を参照。
@@ -75,6 +89,23 @@ NDL への負荷を避けるため、リクエストは逐次で行い、取得�
 
 ndlocr-lite の実行コマンドは環境変数 `NDLOCR_LITE_CMD` で変更できる（既定値は `ndlocr-lite --sourcedir {input} --output {output}`、`{input}`/`{output}` が置換される）。
 
+## 自動ビルドとリリース
+
+[.github/workflows/build-dictionary.yml](.github/workflows/build-dictionary.yml) が毎週日曜 03:00（JST）に辞書をビルドし、GitHub のリリース（タグ `build-YYYYMMDD`、プレリリース）として公開する。Actions の画面から手動でも実行できる。
+
+- JMdict のライセンスは、JMdict を使うソフトウェアに最新版からの定期的な更新の手順を求めているので、毎回最新の JMdict を取得してビルドし直す。
+- OCR（数時間かかる）はワークフローでは行わない。OCR 済みの見出し語の候補（`data/extract/`、`data/extract-ndl/`）をタグ `inputs` のリリースに置き、それを使う。
+- リリースのアーカイブには、辞書3種、`entries.tsv.gz`、`report.md`、使ったリソースの取得元と取得日時（`resources.json`）、`LICENSE`・`NOTICE`・`LICENSES/`・`README.md` を入れる。
+
+OCR や抽出の処理を変えたときは、入力データを作り直して `inputs` のリリースを更新する。
+
+```sh
+deno task extract
+deno task cleanse          # data/extract-ndl/ が無ければ NDL 側 OCR の候補も作られる
+deno task pack-inputs      # dist/inputs.tar.gz
+gh release upload inputs dist/inputs.tar.gz --clobber
+```
+
 ## データの配置
 
 `data/` 以下はサイズが大きいため Git 管理外。
@@ -93,9 +124,24 @@ data/
 │       ├── R0000001.{xml,json,txt}  ndlocr-lite の出力（画像ごと）
 │       └── run-*.json, run-*.log    実行コマンド・バージョンとログ
 ├── tmp/ndlocr-lite-input/<pid>/  ndlocr-lite の入力（未処理の画像へのハードリンク）
+├── raw/resources/                SKK-JISYO.L（コミット固定）と Unihan.zip
 ├── work/<pid>.json               作業用 JSON
-└── extract/<pid>.json            見出し語・表記の候補
+├── extract/<pid>.json            見出し語・表記の候補
+├── extract-ndl/<pid>.json        NDL 側 OCR から取り出した見出し語の候補（クレンジングでの突き合わせ用）
+└── cleanse/<pid>.json            クレンジング結果（補正の記録つき）
 ```
+
+### ビルドされる辞書（`dist/`）
+
+| ファイル                                   | 内容                                                                               |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `SKK-JISYO.dainihonkokugojisyo`            | 検証済み（SKK-JISYO.L との一致、または Unihan の音訓で読みと表記が対応）のエントリ |
+| `SKK-JISYO.dainihonkokugojisyo.noL`        | 上から SKK-JISYO.L にある候補を除いたもの                                          |
+| `SKK-JISYO.dainihonkokugojisyo.unverified` | 検証できなかったエントリ。誤りを多く含む                                           |
+| `entries.tsv`                              | 全候補の一覧（状態、検証方法、補正の記録、紙面画像の切り出し URL）                 |
+| `report.md`                                | 件数の内訳                                                                         |
+
+ベータ版で、どれくらい誤りがあるかを確かめる段階にある。候補には新字体と、底本の字体（旧字体）の両方を入れる。
 
 `--force-ocr` で退避した過去の OCR 結果は `raw/ndlocr-lite/<pid>-<timestamp>/` に残る。
 
