@@ -10,7 +10,7 @@ tag="$1"
 dist="$2"
 out="$3"
 
-name="SKK-JISYO.dainihonkokugojisyo-$tag"
+name="SKK-JISYO.dainihonkokugojiten-$tag"
 pkg="$out/$name"
 mkdir -p "$pkg"
 cp "$dist"/SKK-JISYO.* "$dist/report.md" "$dist/resources.json" "$pkg/"

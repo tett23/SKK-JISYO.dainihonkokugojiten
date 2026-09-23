@@ -4,9 +4,9 @@ import type { SkkDict } from "./resources.ts";
 /**
  * クレンジング結果から SKK 辞書を作る。
  *
- * - SKK-JISYO.dainihonkokugojisyo: 検証済み（L・JMdict・Unihan で読みと表記が確かめられた）のエントリ
- * - SKK-JISYO.dainihonkokugojisyo.noL: 上から SKK-JISYO.L にある候補を除いたもの
- * - SKK-JISYO.dainihonkokugojisyo.unverified: 検証できなかったエントリ（誤りの見積もり用）
+ * - SKK-JISYO.dainihonkokugojiten: 検証済み（L・JMdict・Unihan で読みと表記が確かめられた）のエントリ
+ * - SKK-JISYO.dainihonkokugojiten.noL: 上から SKK-JISYO.L にある候補を除いたもの
+ * - SKK-JISYO.dainihonkokugojiten.unverified: 検証できなかったエントリ（誤りの見積もり用）
  */
 
 /** 候補の注釈: 歴史的仮名遣いの読み（現代の読みと同じなら ""）→ 品詞 */
@@ -113,7 +113,7 @@ const HEADER = (title: string, description: string, count: number) =>
 ;;   https://www.edrdg.org/edrdg/licence.html
 ;; 照合・字体の変換に Unihan Database（Copyright © 1991-2026 Unicode, Inc., Unicode License v3）を使用。
 ;; 各データの権利表示とライセンスの全文は、配布元の NOTICE と LICENSES/ を参照。
-;;   https://github.com/tett23/SKK-JISYO.dainihonkokugojisyo
+;;   https://github.com/tett23/SKK-JISYO.dainihonkokugojiten
 ;; 本辞書は上記を元に加工したものであり、原著者および国立国会図書館が作成したものではない。
 ;;
 ;; This dictionary is free software; you can redistribute it and/or modify it under the
@@ -233,9 +233,9 @@ export function renderReport(
 
 ## 辞書
 
-- SKK-JISYO.dainihonkokugojisyo: ${size(dicts.verified)}
-- SKK-JISYO.dainihonkokugojisyo.noL: ${size(dicts.noL)}
-- SKK-JISYO.dainihonkokugojisyo.unverified: ${size(dicts.unverified)}
+- SKK-JISYO.dainihonkokugojiten: ${size(dicts.verified)}
+- SKK-JISYO.dainihonkokugojiten.noL: ${size(dicts.noL)}
+- SKK-JISYO.dainihonkokugojiten.unverified: ${size(dicts.unverified)}
 
 ## 候補の内訳
 

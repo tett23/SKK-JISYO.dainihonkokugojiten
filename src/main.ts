@@ -214,7 +214,7 @@ async function buildStep(pids: string[]) {
   }
   const dicts = buildDicts(volumes, L);
   await ensureDir(DIST_DIR);
-  const name = "SKK-JISYO.dainihonkokugojisyo";
+  const name = "SKK-JISYO.dainihonkokugojiten";
   const outputs: [string, string][] = [
     [name, renderDict(dicts.verified, name, "検証済みのエントリ")],
     [`${name}.noL`, renderDict(dicts.noL, `${name}.noL`, "検証済みのうち SKK-JISYO.L に無い候補")],
