@@ -11,7 +11,7 @@
     "review": "deno run --allow-read --allow-write --allow-env --allow-net=jsr.io src/main.ts review",
     "accuracy": "deno run --allow-read --allow-write --allow-env --allow-net=jsr.io --allow-run src/main.ts accuracy",
     "compare": "deno run --allow-read --allow-env src/main.ts compare",
-    "pack-inputs": "mkdir -p dist && tar -czf dist/inputs.tar.gz -C data extract extract-ndl recheck recheck-full",
+    "pack-inputs": "mkdir -p dist && tar -czf dist/inputs.tar.gz -C data extract extract-ndl recheck recheck-full recheck-bic2 recheck-lan3 recheck-lan3s",
     "all": "deno run --allow-net --allow-read --allow-write --allow-env --allow-run src/main.ts all",
     "test": "deno test --allow-read --allow-write --allow-env --allow-run"
   },

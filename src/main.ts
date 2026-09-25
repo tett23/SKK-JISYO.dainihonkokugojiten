@@ -22,7 +22,7 @@ import { compareBuilds } from "./compare.ts";
 // 見出しの切り出し（recheck、review）は画像ライブラリを使うので、そのコマンドのときだけ読み込む。
 // cleanse・build は画像もネットワークも使わずに動く（CI で実行する）
 import type { RecheckVolume } from "./recheck.ts";
-import { recheckPaths } from "./recheck_paths.ts";
+import { RECHECK_VARIANTS, recheckPaths, voteRecheck } from "./recheck_paths.ts";
 import { fetchResources, loadSkkL, loadUnihan, resourcePaths } from "./resources.ts";
 import { loadJmdict } from "./jmdict.ts";
 import {
@@ -55,6 +55,9 @@ recheck  検証済み・未検証の候補のうち NDL 側 OCR と読みが一�
        --status <accepted|unverified>  対象を絞る
        --full  見出しの列の全体を切り出して読み直す（表記まで写す）。系統間で読みか表記が一致せずに
                未検証にした候補が対象で、data/recheck-full/<pid>.json に保存する
+       --variants  拡大方法を変えて（双三次 2 倍、Lanczos 3 倍、その鮮鋭化）読み直す。Unihan での
+               対応付けに頼る、濁音・半濁音を含む候補が対象で、data/recheck-<変種>/<pid>.json に保存する。
+               クレンジングでは読み直しの読みを 4 通りの多数決で決める
 accuracy sample  3 つの辞書（検証済み・L 除外・未検証）から候補を無作為に抜き取り、判定用の一覧
        （docs/accuracy/<label>/*.tsv）と紙面の切り出し（dist/accuracy/<label>/）を出力する。
        過去の同じ候補の判定は引き継ぐ。一覧の judgment 列に o / x を記入する。
@@ -217,7 +220,15 @@ async function cleanseStep(pids: string[]) {
     const recheckFull = await Deno.readTextFile(recheckPaths.json(pid, "full"))
       .then((t) => (JSON.parse(t) as RecheckVolume).results)
       .catch(() => ({}));
-    const result = cleanseVolume(extract, ndl, ctx, recheck, recheckFull);
+    // 拡大方法を変えた読み直しがあれば、読み直しの読みを多数決で決める
+    const variants = await Promise.all(
+      RECHECK_VARIANTS.map((v) =>
+        Deno.readTextFile(recheckPaths.json(pid, v))
+          .then((t) => (JSON.parse(t) as RecheckVolume).results)
+          .catch(() => ({}))
+      ),
+    );
+    const result = cleanseVolume(extract, ndl, ctx, voteRecheck(recheck, variants), recheckFull);
     const dest = paths.cleanseJson(pid);
     await ensureDir(dirname(dest));
     await Deno.writeTextFile(dest, JSON.stringify(result, null, 2) + "\n");
@@ -275,7 +286,7 @@ async function buildStep(pids: string[]) {
 
 if (import.meta.main) {
   const args = parseArgs(Deno.args, {
-    boolean: ["force", "force-ocr", "help", "images", "reuse-seed", "full"],
+    boolean: ["force", "force-ocr", "help", "images", "reuse-seed", "full", "variants"],
     string: [
       "pages",
       "source",
@@ -319,9 +330,36 @@ if (import.meta.main) {
     Deno.exit(0);
   }
   if (command === "recheck") {
-    const { collectResults, makeCrops, ocrCrops, recheckPaths, targets } = await import(
-      "./recheck.ts"
-    );
+    const {
+      collectResults,
+      makeCrops,
+      makeVariantCrops,
+      ocrCrops,
+      RECHECK_VARIANTS,
+      recheckPaths,
+      targets,
+      variantTargets,
+    } = await import("./recheck.ts");
+    if (args.variants) {
+      // 拡大方法を変えて読み直す（多数決用）
+      for (const pid of pids) {
+        const volume: CleanVolume = JSON.parse(await Deno.readTextFile(paths.cleanseJson(pid)));
+        const head = (JSON.parse(await Deno.readTextFile(paths.recheckJson(pid))) as RecheckVolume)
+          .results;
+        const list = variantTargets(volume, head);
+        console.log(`[recheck] ${pid} variants: ${list.length} entries`);
+        const counts = await makeVariantCrops(pid, list);
+        for (const v of RECHECK_VARIANTS) {
+          await ocrCrops(pid, counts[v], ndlocrLiteConfigFromEnv(), v);
+          const results = await collectResults(pid, v);
+          const dest = recheckPaths.json(pid, v);
+          await ensureDir(dirname(dest));
+          await Deno.writeTextFile(dest, JSON.stringify(results) + "\n");
+          console.log(`  ${v}: ${Object.keys(results.results).length} results -> ${dest}`);
+        }
+      }
+      Deno.exit(0);
+    }
     const mode = args.full ? "full" : "head";
     const statuses = args.status ? [args.status] : ["accepted", "unverified"];
     for (const status of statuses) {
@@ -394,6 +432,7 @@ if (import.meta.main) {
             paths.extractNdlJson(v.pid),
             paths.recheckJson(v.pid),
             recheckPaths.json(v.pid, "full"),
+            ...RECHECK_VARIANTS.map((m) => recheckPaths.json(v.pid, m)),
           ]),
         ),
         // 同じ条件で抜き取り直したときは、記録済みの説明を引き継ぐ
