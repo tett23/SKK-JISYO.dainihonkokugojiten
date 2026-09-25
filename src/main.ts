@@ -54,7 +54,7 @@ recheck  検証済み・未検証の候補のうち NDL 側 OCR と読みが一�
        ndlocr-lite で読み直し、data/recheck/<pid>.json に保存する（検証済みを先に処理する）。
        --status <accepted|unverified>  対象を絞る
        --full  見出しの列の全体を切り出して読み直す（表記まで写す）。系統間で読みか表記が一致せずに
-               未検証にした候補が対象で、data/recheck-full/<pid>.json に保存する|unverified>  対象を絞る
+               未検証にした候補が対象で、data/recheck-full/<pid>.json に保存する
 accuracy sample  3 つの辞書（検証済み・L 除外・未検証）から候補を無作為に抜き取り、判定用の一覧
        （docs/accuracy/<label>/*.tsv）と紙面の切り出し（dist/accuracy/<label>/）を出力する。
        過去の同じ候補の判定は引き継ぐ。一覧の judgment 列に o / x を記入する。

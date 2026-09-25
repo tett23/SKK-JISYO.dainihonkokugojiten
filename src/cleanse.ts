@@ -65,6 +65,10 @@ export type CleanEntry = {
    * （はんにゃ-の-めん → はんにゃめん）を書き換えることがあるため
    */
   altSkkKeys?: string[];
+  /**
+   * 追加の表記。見出しが二つの表記を並べたもの（零翻、抱懷）で、両方が読みに合う場合のもう一方
+   */
+  altNotations?: string[];
   okuri?: boolean;
   ndl?: { reading: string; notation?: string; agree: boolean };
   order: "ok" | "outlier";
@@ -652,6 +656,52 @@ function resolveVoicing(e: CleanEntry, sources: (string | undefined)[], ctx: Con
 }
 
 /**
+ * 表記の補正で字が減った場合（NDL 側 OCR などの表記に差し替えた）の扱いを決める。
+ * 底本の見出しは二つの表記を並べることがある（零翻 = 零・翻、取成執成 = 取成・執成）。
+ * 差し替えた表記が元の表記の前か後ろで、残りの字も同じ見出しで辞書か対応付けに通るなら、
+ * 残り（三つ以上並べたものは区切り文字 U+0000 でつないだもの）を返す（すべて登録する）。
+ * 字が減らない補正なら undefined、通らなければ false
+ */
+function splitNotation(
+  original: string | undefined,
+  r: { notation: string; skkKey: string; fix?: Fix },
+  e: CleanEntry,
+  ctx: Context,
+): string | false | undefined {
+  if (!original || [...r.notation].length >= [...original].length) return undefined;
+  // 先頭の「一」を漢語の記号として除いた補正は字が欠けるのではない
+  if (original.startsWith("一") && original.slice(1) === r.notation) return undefined;
+  const rest = original.startsWith(r.notation)
+    ? original.slice(r.notation.length)
+    : original.endsWith(r.notation)
+    ? original.slice(0, original.length - r.notation.length)
+    : undefined;
+  if (!rest || !HAN_RE.test(rest)) return false;
+  // 見出しの前の記号「―」を 一・二・七 と読み誤ったもの（二五音 → 五音）は、字が欠けるのではない
+  if (original.endsWith(r.notation) && /^[一二七]$/.test(rest)) return undefined;
+  // 残りを 1 つ以上の表記に分け、どれも同じ見出しで通るか（肘肱臂 = 肘・肱・臂）
+  const fits = (n: string) => {
+    const m = matchL(e.reading, n, e.pos, e.kango, ctx) ??
+      matchJM(e.reading, n, e.pos, e.kango, ctx) ??
+      matchAlign(e.reading, n, e.pos, e.kango, ctx);
+    return m?.skkKey === r.skkKey;
+  };
+  const chars = [...rest];
+  const segment = (i: number): string[] | undefined => {
+    if (i === chars.length) return [];
+    for (let j = chars.length; j > i; j--) {
+      const piece = chars.slice(i, j).join("");
+      if (!fits(piece)) continue;
+      const tail = segment(j);
+      if (tail) return [piece, ...tail];
+    }
+    return undefined;
+  };
+  const pieces = segment(0);
+  return pieces ? pieces.join("\u0000") : false;
+}
+
+/**
  * Unihan での対応付けだけで検証した候補に、OCR の系統間の一致を求める。
  * 対応付けは読みと表記が矛盾しないことしか確かめないので、同じ読みの別の字（屏代幔 → 屏代慢）や、
  * 濁点の付け外し（き-そつ → ぎ-そつ）を通してしまう。v1.0.0 の L 除外辞書の誤りはすべてこの形だった。
@@ -1016,6 +1066,21 @@ export function cleanseVolume(
       r = undefined;
     }
     if (r && r.method !== "L-notation") {
+      const split = splitNotation(e.notation, r, e, ctx);
+      if (split === false) {
+        // 表記の字を削って辞書に合わせると、二つ並べた表記の片方だけが残る（零翻 → 零）。
+        // 残りの字も同じ読みで通るときだけ両方を採り、それ以外は採らない
+        e.suggestions.push({
+          field: "notation",
+          from: e.notation!,
+          to: r.notation,
+          reason: "表記の差し替え（表記の字が欠けるため未適用）",
+        });
+        r = undefined;
+        e.reason = "split-notation";
+      } else if (split) e.altNotations = split.split("\u0000");
+    }
+    if (r && r.method !== "L-notation") {
       if (r.fix?.field === "reading") e.reading = r.fix.to;
       if (r.fix) e.fixes.push(r.fix);
       e.notation = r.notation;
@@ -1057,6 +1122,11 @@ export function cleanseVolume(
       }
     }
     e.shinjitai = toShinjitai(e.notation, ctx.unihan);
+    if (e.status !== "accepted") delete e.altNotations;
+    else if (e.altNotations) {
+      // 新字体の形も登録する
+      e.altNotations = [...new Set(e.altNotations.flatMap((n) => [n, toShinjitai(n, ctx.unihan)]))];
+    }
   });
 
   return { schemaVersion: 1, pid: extract.pid, generatedAt: new Date().toISOString(), entries };
