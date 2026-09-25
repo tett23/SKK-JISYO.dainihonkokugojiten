@@ -97,3 +97,48 @@ export function alignReading(
   };
   return rec(0, 0, []);
 }
+
+/**
+ * 表記の各文字に割り当てた読み（alignReading と同じ規則）。対応付けられなければ undefined。
+ * 表記に現れない連体助詞（の・つ・が）は直後の字の読みに含めない（別の要素として返さない）
+ */
+export function segmentReading(
+  notation: string,
+  reading: string,
+  unihan: Unihan,
+  { maxTrailing, rendaku = true }: AlignOptions,
+): { char: string; kana: string }[] | undefined {
+  const chars = [...notation];
+  const seen = new Set<string>();
+  const out: { char: string; kana: string }[] = [];
+  const rec = (i: number, j: number, prev: string[], particle: boolean): boolean => {
+    const key = `${i}:${j}:${particle ? 1 : 0}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    if (i === chars.length) return reading.length - j <= maxTrailing;
+    const ch = chars[i];
+    if (/[ぁ-ゖァ-ヶ]/.test(ch)) {
+      if (reading[j] !== toHira(ch)) return false;
+      out.push({ char: ch, kana: reading[j] });
+      if (rec(i + 1, j + 1, [], false)) return true;
+      out.pop();
+      return false;
+    }
+    const base = ch === "々" || ch === "〻" ? prev : readingsFor(ch, unihan);
+    for (const r of base) {
+      for (const v of variants(r, i > 0, i < chars.length - 1, rendaku)) {
+        if (!reading.startsWith(v, j)) continue;
+        out.push({ char: ch, kana: v });
+        if (rec(i + 1, j + v.length, base, false)) return true;
+        out.pop();
+      }
+    }
+    if (i > 0 && !particle) {
+      for (const p of IMPLICIT_PARTICLES) {
+        if (reading.startsWith(p, j) && rec(i, j + p.length, prev, true)) return true;
+      }
+    }
+    return false;
+  };
+  return rec(0, 0, [], false) ? out : undefined;
+}
