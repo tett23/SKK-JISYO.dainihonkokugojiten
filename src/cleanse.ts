@@ -353,7 +353,32 @@ function matchJM(reading: string, notation: string, pos: Pos, kango: boolean, ct
 }
 
 function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean, ctx: Context) {
-  if (OKURI_CATEGORIES.has(pos.category)) return undefined;
+  // 形容詞は、文語の終止形から SKK の送りありの見出しの形が決まらないので対象にしない
+  if (pos.category === "adjective") return undefined;
+  if (pos.category === "verb") {
+    // 動詞は、読みの最後の 1 文字（送り仮名）を除いた語幹を表記に対応付ける。
+    // 底本の表記は送り仮名を省く（奧寄 = あう-よる）。見出しは語幹 + 最後の字の行の子音で、
+    // 四段・下二段・上二段のどれでも同じになる（開く・明ける はどちらも あk）
+    // 語幹の最後の字は訓読みだけで対応付ける（果 は音読みに わ を持つので くみ-はつ 組果 が くみわ に通る）。
+    // す・ず で終わるサ変動詞（殉す、令す）は音読みも許す。
+    // 通る変換が複数あって見出しが食い違うなら決めない（ふみ-たふす 蹈倒 は ふみとうす にも通る）
+    const found = new Map<string, { modern: string; skkKey: string; okuri: true }>();
+    for (const v of modernVariants(reading, { kango })) {
+      const stem = v.slice(0, -1);
+      const oc = okuriChars(v.slice(-1))[0];
+      // 動詞の終止形は う段 で終わる（なぎ-たてる を二系統とも なぎたてゐ と読んだ）
+      if (!stem || !oc || !/[うくぐすずつづぬふぶむゆる]$/.test(v)) continue;
+      const lastKun = !/[すず]$/.test(v);
+      if (
+        notationForms(notation, ctx).some((n) =>
+          alignReading(n, stem, ctx.unihan, { maxTrailing: 0, lastKun })
+        )
+      ) {
+        found.set(stem + oc, { modern: v, skkKey: stem + oc, okuri: true as const });
+      }
+    }
+    return found.size === 1 ? [...found.values()][0] : undefined;
+  }
   for (const v of modernVariants(reading, { kango })) {
     // 表記の後ろに余った読み（省かれた送り仮名）は、表記が 1 文字の場合（おそ-さ 遲）だけ 1 文字許す。
     // 2 文字以上では許さない（ぎ-すら 擬數 のような誤読を通さないため）
@@ -633,6 +658,8 @@ function resolveVoicing(e: CleanEntry, sources: (string | undefined)[], ctx: Con
  *
  * - 読み: ndlocr-lite（紙面全体）・NDL 側 OCR・見出しの読み直しのうち 2 つ以上が、濁点まで含めて一致する
  * - 表記: 同じく 2 つ以上が一致する（新字体に直して比べる。旧字体と新字体の違いは食い違いとしない）
+ * - 見出しの読み直しは列の上端しか写さず、表記が切れることがある。一致が足りない候補は列の全体を
+ *   切り出して読み直し（recheck --full）、その読み・表記も一致の数え上げに加える
  * - 連濁: 連濁（2 文字目以降の読みの語頭の濁音・半濁音）を許さないと対応付けられない読みは、
  *   濁点の有無を OCR だけで決めていることになる。二系統が同じように濁点を誤読することがある
  *   （わか-ばえ 若生、紙面は わか-はえ）ので、採用しない
@@ -652,17 +679,29 @@ function requireAgreement(
   notationB: string | undefined,
   notationC: string | undefined,
   ctx: Context,
+  /** 見出しの列の全体を切り出した読み直し（表記まで写す）。一致の数え上げにだけ使う */
+  full?: { reading?: string; notation?: string },
 ) {
   const target = plain(e.reading);
   const readings = [normalizeReading(e.source.reading.replaceAll("ー", "-")), readingB, readingC];
   const shin = (n: string) => toShinjitai(n, ctx.unihan);
   const notation = shin(e.notation!);
-  const notations = [normalizeNotation(e.source.notation).notation, notationB, notationC];
+  const notations = [
+    normalizeNotation(e.source.notation).notation,
+    notationB,
+    notationC,
+    normalizeNotation(full?.notation).notation,
+  ];
+  const readingD = full?.reading ? normalizeReading(full.reading.replaceAll("ー", "-")) : undefined;
   const maxTrailing = [...e.notation!].length === 1 ? 1 : 0;
   const aligns = (reading: string, rendaku: boolean) =>
     modernVariants(reading, { kango: e.kango }).some((v) =>
       notationForms(e.notation!, ctx).some((n) =>
-        alignReading(n, v, ctx.unihan, { maxTrailing, rendaku })
+        // 動詞は送り仮名（最後の 1 文字）を除いた語幹を対応付ける
+        alignReading(n, e.okuri ? v.slice(0, -1) : v, ctx.unihan, {
+          maxTrailing: e.okuri ? 0 : maxTrailing,
+          rendaku,
+        })
       )
     );
   const withoutRendaku = aligns(e.reading, false);
@@ -674,19 +713,27 @@ function requireAgreement(
     const alt = chars.with(i, b >= 0 ? "ぱぴぷぺぽ"[b] : "ばびぶべぼ"[p]);
     return aligns(alt.join(""), true);
   });
-  const agreeing = readings.filter((r) => r !== undefined && plain(r) === target).length;
-  // 三系統すべてが、濁音・半濁音の字を同じに読んだなら（ほかの字の食い違いは問わない）、
+  // NDL 側 OCR は区切りを「ー」で出すことがある（あか-がらし を あかーがらし）ので、それも除いて比べる
+  const bare = (r: string) => r.replaceAll(/[-ー]/g, "");
+  const agreeing = [...readings, readingD].filter((r) => r !== undefined && bare(r) === target)
+    .length;
+  // 読みのある系統すべてが、濁音・半濁音の字を同じに読んだなら（ほかの字の食い違いは問わない）、
   // 連濁・半濁点の読み分けは OCR の誤読ではないとみなす
   const VOICED = /[がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ]/;
   const t = [...target];
-  const unanimous = readings.every((r) => {
-    const c = r === undefined ? undefined : [...plain(r)];
-    return c !== undefined && c.length === t.length &&
-      t.every((ch, i) => !VOICED.test(ch) || c[i] === ch);
+  // 読みのある系統（列全体の読み直しを含む）が 3 つ以上あり、すべてが一致すること
+  const present = [...readings, readingD].filter((r): r is string => r !== undefined);
+  const unanimous = present.length >= 3 && present.every((r) => {
+    const c = [...bare(r)];
+    return c.length === t.length && t.every((ch, i) => !VOICED.test(ch) || c[i] === ch);
   });
   const reason = agreeing < 2
     ? "align-single-reading"
-    : notations.filter((n) => n !== undefined && shin(n) === notation).length < 2
+    : notations.slice(0, 3).filter((n) => n !== undefined && shin(n) === notation).length < 2 &&
+        // 列全体の読み直しは元の OCR と同じエンジンなので、別のエンジン（NDL 側 OCR）が別の表記を
+        // 読んでいるときは数に入れない（嘉耦 を 嘉隅 と二度読んだ）
+        !(notations[3] !== undefined && shin(notations[3]) === notation &&
+          (notationB === undefined || shin(notationB) === notation))
     ? "align-single-notation"
     : !withoutRendaku && !unanimous
     ? "align-rendaku"
@@ -795,6 +842,8 @@ export function cleanseVolume(
   ctx: Context,
   /** 見出しの切り出しの読み直し（id → 結果） */
   recheck: Record<string, RecheckResult> = {},
+  /** 見出しの列の全体を切り出した読み直し（id → 結果） */
+  recheckFull: Record<string, RecheckResult> = {},
 ): CleanVolume {
   // 1. 正規化と 2. 突き合わせ
   const entries: CleanEntry[] = extract.candidates.map((c) => {
@@ -865,14 +914,18 @@ export function cleanseVolume(
     }
     // 三系統の多数決（読み直しの結果がある候補のみ）
     const rc = recheck[e.id];
-    const readingC = rc?.reading ? normalizeReading(rc.reading) : undefined;
-    const readingB = e.ndl ? normalizeReading(e.ndl.reading) : undefined;
+    // 漢字の表記がある語の読みの「ー」は区切りの誤読（NDL 側 OCR は あか-がらし を あかーがらし と出す）
+    const hyphen = (r: string) => normalizeReading(r.replaceAll("ー", "-"));
+    const readingC = rc?.reading ? hyphen(rc.reading) : undefined;
+    const readingB = e.ndl ? hyphen(e.ndl.reading) : undefined;
     const notationC = normalizeNotation(rc?.notation);
     const notationB = normalizeNotation(e.ndl?.notation);
     // NDL 側 OCR と読み直しの表記が一致して元の表記と違う場合は、その表記を先に試す
     // （両方が同じように誤読することもあるので、照合できなければ元の表記を使う）
+    const notationD = normalizeNotation(recheckFull[e.id]?.notation);
     const notationBC = notationB.notation && !notationB.bad &&
-        notationB.notation === notationC.notation && notationB.notation !== e.notation
+        (notationB.notation === notationC.notation || notationB.notation === notationD.notation) &&
+        notationB.notation !== e.notation
       ? notationB.notation
       : undefined;
     let vote: "none" | "agree" | "override" | "conflict" = "none";
@@ -900,7 +953,9 @@ export function cleanseVolume(
         ...options.map((o) => ({
           ...o,
           notation: notationBC,
-          reason: "NDL 側 OCR と見出しの読み直しの表記が一致",
+          reason: notationB.notation === notationC.notation
+            ? "NDL 側 OCR と見出しの読み直しの表記が一致"
+            : "NDL 側 OCR と見出しの列全体の読み直しの表記が一致",
         })),
       );
     }
@@ -920,7 +975,7 @@ export function cleanseVolume(
       });
     }
     if (e.ndl && !e.ndl.agree) {
-      const r = normalizeReading(e.ndl.reading);
+      const r = hyphen(e.ndl.reading);
       const nn = normalizeNotation(e.ndl.notation);
       if (plain(r) !== plain(e.reading) && (vote === "none")) {
         options.push({ reading: r, notation: e.notation, reason: "NDL 側 OCR の読み" });
@@ -972,7 +1027,15 @@ export function cleanseVolume(
       resolveVoicing(e, [e.source.reading.replaceAll("ー", "-"), readingB, readingC], ctx);
       if (e.status === "accepted" && e.method === "align") fixRaToU(e, ctx);
       if (e.status === "accepted" && e.method === "align") {
-        requireAgreement(e, readingB, readingC, notationB.notation, notationC.notation, ctx);
+        requireAgreement(
+          e,
+          readingB,
+          readingC,
+          notationB.notation,
+          notationC.notation,
+          ctx,
+          recheckFull[e.id],
+        );
       }
     }
     if (e.status !== "accepted" && !(e.reason?.startsWith("align-") && e.skkKey)) {

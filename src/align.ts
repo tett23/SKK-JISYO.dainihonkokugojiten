@@ -10,6 +10,8 @@ export type AlignOptions = {
   maxTrailing: number;
   /** 連濁（2 文字目以降の読みの語頭を濁音・半濁音にする）を許すか（既定 true） */
   rendaku?: boolean;
+  /** 最後の字は訓読みだけで対応付ける（動詞の語幹の最後の字。既定 false） */
+  lastKun?: boolean;
 };
 
 const toHira = (s: string) =>
@@ -20,11 +22,11 @@ const I_ROW = "いきぎしじちぢにひびぴみ　り";
 
 const cache = new Map<string, string[]>();
 
-function readingsFor(ch: string, unihan: Unihan): string[] {
-  const hit = cache.get(ch);
+function readingsFor(ch: string, unihan: Unihan, kunOnly = false): string[] {
+  const hit = cache.get(ch + (kunOnly ? ":kun" : ""));
   if (hit) return hit;
   const r = unihan.readings.get(ch);
-  const out = new Set<string>(r?.on ?? []);
+  const out = new Set<string>(kunOnly ? [] : r?.on ?? []);
   for (const k of r?.kun ?? []) {
     out.add(k);
     // 訓読みの送り仮名を省いた形（あける → あけ）。半分以上かつ 2 文字以上は残す
@@ -37,7 +39,7 @@ function readingsFor(ch: string, unihan: Unihan): string[] {
     if (i >= 0 && I_ROW[i] !== "　" && k.length >= 2) out.add(k.slice(0, -1) + I_ROW[i]);
   }
   const list = [...out];
-  cache.set(ch, list);
+  cache.set(ch + (kunOnly ? ":kun" : ""), list);
   return list;
 }
 
@@ -60,7 +62,7 @@ export function alignReading(
   notation: string,
   reading: string,
   unihan: Unihan,
-  { maxTrailing, rendaku = true }: AlignOptions,
+  { maxTrailing, rendaku = true, lastKun = false }: AlignOptions,
 ): boolean {
   const chars = [...notation];
   const seen = new Set<string>();
@@ -74,7 +76,9 @@ export function alignReading(
     if (/[ぁ-ゖァ-ヶ]/.test(ch)) {
       return reading[j] === toHira(ch) && rec(i + 1, j + 1, []);
     }
-    const base = ch === "々" || ch === "〻" ? prev : readingsFor(ch, unihan);
+    const base = ch === "々" || ch === "〻"
+      ? prev
+      : readingsFor(ch, unihan, lastKun && i === chars.length - 1);
     for (const r of base) {
       for (const v of variants(r, i > 0, i < chars.length - 1, rendaku)) {
         if (reading.startsWith(v, j) && rec(i + 1, j + v.length, base)) return true;
