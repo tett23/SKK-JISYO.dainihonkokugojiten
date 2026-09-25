@@ -1,4 +1,5 @@
 import { alignReading } from "./align.ts";
+import { buildReadingStats, type ReadingStats, voicingAnomalies } from "./reading_stats.ts";
 import type { BBox, Candidate, ExtractVolume } from "./extract.ts";
 import type { NdlCandidate } from "./extract_ndl.ts";
 import type { RecheckResult } from "./recheck.ts";
@@ -92,6 +93,8 @@ export type Context = {
   unihan: Unihan;
   skeletonReadings: Map<string, string[]>;
   jm?: Jmdict;
+  /** 字ごとの読みの頭の清濁の統計（L・JMdict から作る） */
+  readingStats: ReadingStats;
 };
 
 const HAN_RE = /[\p{Script=Han}々〆ヶ〻]/u;
@@ -109,7 +112,7 @@ export function buildContext(L: SkkDict, unihan: Unihan, jm?: Jmdict): Context {
       else skeletonReadings.set(s, [reading]);
     }
   }
-  return { L, unihan, skeletonReadings, jm };
+  return { L, unihan, skeletonReadings, jm, readingStats: buildReadingStats(L, jm, unihan) };
 }
 
 export function toShinjitai(s: string, unihan: Unihan): string {
@@ -791,6 +794,9 @@ function requireAgreement(
     ? "align-handakuten"
     : /[ぢづ]/.test(e.skkKey ?? "") && !resolveDzi(e, ctx)
     ? "align-dzi"
+    // 字ごとの清濁が L・JMdict の統計に反する（語頭の 盆 を ほん、ん の後の 報 を ぼう）
+    : !e.okuri && voicingAnomalies(e.notation!, e.skkKey!, ctx.unihan, ctx.readingStats).length > 0
+    ? "voicing-stats"
     : undefined;
   if (reason) {
     e.status = "unverified";
