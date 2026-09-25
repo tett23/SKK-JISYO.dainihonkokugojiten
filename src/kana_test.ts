@@ -69,3 +69,9 @@ Deno.test("modernVariants: 語の途中の い は拗音にしない（たいや
   // 語構成要素の頭の いやう は よう
   assertEquals(modernVariants("いやう", { kango: true })[0], "よう");
 });
+
+Deno.test("modernVariants: くわう・ぐわう は こう・ごう", () => {
+  assertEquals(modernVariants("くわう-さい", { kango: true })[0], "こうさい");
+  assertEquals(modernVariants("じゃう-くわう", { kango: true })[0], "じょうこう");
+  assertEquals(modernVariants("ぐわう", { kango: true })[0], "ごう");
+});

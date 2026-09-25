@@ -22,6 +22,7 @@ import { compareBuilds } from "./compare.ts";
 // 見出しの切り出し（recheck、review）は画像ライブラリを使うので、そのコマンドのときだけ読み込む。
 // cleanse・build は画像もネットワークも使わずに動く（CI で実行する）
 import type { RecheckVolume } from "./recheck.ts";
+import { recheckPaths } from "./recheck_paths.ts";
 import { fetchResources, loadSkkL, loadUnihan, resourcePaths } from "./resources.ts";
 import { loadJmdict } from "./jmdict.ts";
 import {
@@ -52,6 +53,8 @@ build  クレンジング結果から SKK 辞書とレポートを dist/ に出�
 recheck  検証済み・未検証の候補のうち NDL 側 OCR と読みが一致しないものの見出しを切り出して
        ndlocr-lite で読み直し、data/recheck/<pid>.json に保存する（検証済みを先に処理する）。
        --status <accepted|unverified>  対象を絞る
+       --full  見出しの列の全体を切り出して読み直す（表記まで写す）。系統間で読みか表記が一致せずに
+               未検証にした候補が対象で、data/recheck-full/<pid>.json に保存する|unverified>  対象を絞る
 accuracy sample  3 つの辞書（検証済み・L 除外・未検証）から候補を無作為に抜き取り、判定用の一覧
        （docs/accuracy/<label>/*.tsv）と紙面の切り出し（dist/accuracy/<label>/）を出力する。
        過去の同じ候補の判定は引き継ぐ。一覧の judgment 列に o / x を記入する。
@@ -211,7 +214,10 @@ async function cleanseStep(pids: string[]) {
     const recheck = await Deno.readTextFile(paths.recheckJson(pid))
       .then((t) => (JSON.parse(t) as RecheckVolume).results)
       .catch(() => ({}));
-    const result = cleanseVolume(extract, ndl, ctx, recheck);
+    const recheckFull = await Deno.readTextFile(recheckPaths.json(pid, "full"))
+      .then((t) => (JSON.parse(t) as RecheckVolume).results)
+      .catch(() => ({}));
+    const result = cleanseVolume(extract, ndl, ctx, recheck, recheckFull);
     const dest = paths.cleanseJson(pid);
     await ensureDir(dirname(dest));
     await Deno.writeTextFile(dest, JSON.stringify(result, null, 2) + "\n");
@@ -269,7 +275,7 @@ async function buildStep(pids: string[]) {
 
 if (import.meta.main) {
   const args = parseArgs(Deno.args, {
-    boolean: ["force", "force-ocr", "help", "images", "reuse-seed"],
+    boolean: ["force", "force-ocr", "help", "images", "reuse-seed", "full"],
     string: [
       "pages",
       "source",
@@ -313,21 +319,23 @@ if (import.meta.main) {
     Deno.exit(0);
   }
   if (command === "recheck") {
-    const { collectResults, makeCrops, ocrCrops, targets } = await import("./recheck.ts");
+    const { collectResults, makeCrops, ocrCrops, recheckPaths, targets } = await import(
+      "./recheck.ts"
+    );
+    const mode = args.full ? "full" : "head";
     const statuses = args.status ? [args.status] : ["accepted", "unverified"];
     for (const status of statuses) {
       for (const pid of pids) {
         const volume: CleanVolume = JSON.parse(await Deno.readTextFile(paths.cleanseJson(pid)));
-        const list = targets(volume).filter((e) => e.status === status);
-        console.log(`[recheck] ${pid} ${status}: ${list.length} entries`);
-        const count = await makeCrops(pid, list);
-        await ocrCrops(pid, count, ndlocrLiteConfigFromEnv());
-        const results = await collectResults(pid);
-        await ensureDir(dirname(paths.recheckJson(pid)));
-        await Deno.writeTextFile(paths.recheckJson(pid), JSON.stringify(results) + "\n");
-        console.log(
-          `  ${Object.keys(results.results).length} results -> ${paths.recheckJson(pid)}`,
-        );
+        const list = targets(volume, mode).filter((e) => e.status === status);
+        console.log(`[recheck] ${pid} ${status} ${mode}: ${list.length} entries`);
+        const count = await makeCrops(pid, list, mode);
+        await ocrCrops(pid, count, ndlocrLiteConfigFromEnv(), mode);
+        const results = await collectResults(pid, mode);
+        const dest = recheckPaths.json(pid, mode);
+        await ensureDir(dirname(dest));
+        await Deno.writeTextFile(dest, JSON.stringify(results) + "\n");
+        console.log(`  ${Object.keys(results.results).length} results -> ${dest}`);
       }
     }
     Deno.exit(0);
@@ -385,6 +393,7 @@ if (import.meta.main) {
             paths.extractJson(v.pid),
             paths.extractNdlJson(v.pid),
             paths.recheckJson(v.pid),
+            recheckPaths.json(v.pid, "full"),
           ]),
         ),
         // 同じ条件で抜き取り直したときは、記録済みの説明を引き継ぐ

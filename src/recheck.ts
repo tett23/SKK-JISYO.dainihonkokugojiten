@@ -1,7 +1,7 @@
 import { decode, Image } from "@matmen/imagescript";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
-import { DATA_DIR, paths } from "./config.ts";
+import { paths } from "./config.ts";
 import type { CleanEntry, CleanVolume } from "./cleanse.ts";
 import { parseHead } from "./extract.ts";
 import { imageFileName } from "./ndl.ts";
@@ -15,10 +15,8 @@ import { type NdlocrLiteConfig, parseNdlocrXml, runOcr } from "./ndlocr_lite.ts"
  * NDL 側 OCR に次ぐ三つ目の読みとしてクレンジングで使う。
  */
 
-export const recheckPaths = {
-  input: (pid: string) => join(DATA_DIR, "tmp", "recheck-input", pid),
-  raw: (pid: string) => join(DATA_DIR, "raw", "recheck", pid),
-};
+import { type RecheckMode, recheckPaths } from "./recheck_paths.ts";
+export { type RecheckMode, recheckPaths };
 
 export type RecheckResult = {
   /** 切り出した列を読み順につないだテキスト */
@@ -62,9 +60,14 @@ export function subImage(src: Image, x: number, y: number, w: number, h: number)
 const CROP = { padX: 8, padTop: 14, padBottom: 8, maxHeight: 360, scale: 2, margin: 60 };
 
 /** 対象の候補の見出しの列を切り出して拡大し、PNG で保存する。作成済みのものは飛ばす */
-export async function makeCrops(pid: string, entries: CleanEntry[]): Promise<number> {
-  const dir = recheckPaths.input(pid);
-  const done = recheckPaths.raw(pid);
+export async function makeCrops(
+  pid: string,
+  entries: CleanEntry[],
+  mode: RecheckMode = "head",
+): Promise<number> {
+  const dir = recheckPaths.input(pid, mode);
+  const done = recheckPaths.raw(pid, mode);
+  const maxHeight = mode === "head" ? CROP.maxHeight : Infinity;
   await ensureDir(dir);
   const byFrame = Map.groupBy(entries, (e) => e.frame);
   let count = 0;
@@ -88,7 +91,7 @@ export async function makeCrops(pid: string, entries: CleanEntry[]): Promise<num
       const w = Math.min(page.width - x, e.bbox.width + CROP.padX * 2);
       const h = Math.min(
         page.height - y,
-        Math.min(e.bbox.height, CROP.maxHeight) + CROP.padTop + CROP.padBottom,
+        Math.min(e.bbox.height, maxHeight) + CROP.padTop + CROP.padBottom,
       );
       const crop = subImage(page, x, y, w, h).resize(w * CROP.scale, h * CROP.scale);
       const canvas = new Image(crop.width + CROP.margin * 2, crop.height + CROP.margin * 2)
@@ -102,12 +105,17 @@ export async function makeCrops(pid: string, entries: CleanEntry[]): Promise<num
 }
 
 /** 切り出した画像を OCR する（OCR 済みは makeCrops の時点で除かれている） */
-export async function ocrCrops(pid: string, count: number, config: NdlocrLiteConfig) {
+export async function ocrCrops(
+  pid: string,
+  count: number,
+  config: NdlocrLiteConfig,
+  mode: RecheckMode = "head",
+) {
   if (count === 0) return;
-  const output = recheckPaths.raw(pid);
+  const output = recheckPaths.raw(pid, mode);
   await ensureDir(output);
-  await runOcr(recheckPaths.input(pid), output, count, config);
-  await Deno.remove(recheckPaths.input(pid), { recursive: true });
+  await runOcr(recheckPaths.input(pid, mode), output, count, config);
+  await Deno.remove(recheckPaths.input(pid, mode), { recursive: true });
 }
 
 /** 列の OCR 結果（上から下へつなぐ）から見出しを読む */
@@ -122,8 +130,11 @@ export function readHead(xml: string): RecheckResult {
   return { text, reading: kana || undefined };
 }
 
-export async function collectResults(pid: string): Promise<RecheckVolume> {
-  const dir = recheckPaths.raw(pid);
+export async function collectResults(
+  pid: string,
+  mode: RecheckMode = "head",
+): Promise<RecheckVolume> {
+  const dir = recheckPaths.raw(pid, mode);
   const results: Record<string, RecheckResult> = {};
   if (await exists(dir)) {
     for await (const f of Deno.readDir(dir)) {
@@ -134,6 +145,12 @@ export async function collectResults(pid: string): Promise<RecheckVolume> {
   return { schemaVersion: 1, pid, results };
 }
 
-export function targets(volume: CleanVolume): CleanEntry[] {
-  return volume.entries.filter(needsRecheck);
+export function targets(volume: CleanVolume, mode: RecheckMode = "head"): CleanEntry[] {
+  // full は、系統間で読みか表記が一致しないか、連濁・半濁点を読み分けられずに未検証にした候補だけを読み直す
+  return mode === "head"
+    ? volume.entries.filter(needsRecheck)
+    : volume.entries.filter((e) =>
+      e.reason === "align-single-notation" || e.reason === "align-single-reading" ||
+      e.reason === "align-rendaku" || e.reason === "align-handakuten"
+    );
 }
