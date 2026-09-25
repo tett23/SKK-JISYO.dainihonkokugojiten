@@ -65,7 +65,12 @@ export const annotation = (e: CleanEntry) =>
 /** 候補が L 除外辞書（.noL）に入るか: 表記（新字体・底本の字体）のどちらかが L に無い */
 export function inNoL(L: SkkDict, e: CleanEntry): boolean {
   if (e.status !== "accepted" || !e.skkKey || !e.shinjitai || !e.notation) return false;
-  return [e.shinjitai, e.notation].some((w) => !inL(L, e.skkKey!, w, !!e.okuri));
+  return notationsOf(e).some((w) => !inL(L, e.skkKey!, w, !!e.okuri));
+}
+
+/** 候補の表記（新字体・底本の字体、二つ並べた見出しのもう一方も） */
+function notationsOf(e: CleanEntry): string[] {
+  return [...new Set([e.shinjitai!, e.notation!, ...(e.altNotations ?? [])])];
 }
 
 function addEntry(dict: Dict, e: CleanEntry) {
@@ -75,7 +80,7 @@ function addEntry(dict: Dict, e: CleanEntry) {
   const label = posLabel(e);
   for (const key of [e.skkKey, ...(e.altSkkKeys ?? [])]) {
     const words = map.get(key) ?? new Map<string, Notes>();
-    for (const w of [e.shinjitai, e.notation]) {
+    for (const w of notationsOf(e)) {
       const notes = words.get(w) ?? new Map<string, Set<string>>();
       const labels = notes.get(historical) ?? new Set<string>();
       labels.add(label);

@@ -268,7 +268,10 @@ export async function writeSamples(
         no: String(i + 1),
         id: e.id,
         skk_key: e.skkKey ?? "",
-        notation: e.notation ?? "",
+        // 二つ以上並べた見出し（零翻）は、登録するすべての表記を「・」でつないで示す
+        notation: [e.notation ?? "", ...(e.altNotations ?? [])].filter((n, i, xs) =>
+          xs.indexOf(n) === i
+        ).join("・"),
         reading: e.reading,
         method: e.method,
         judgment: "",
