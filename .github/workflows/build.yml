@@ -2,7 +2,7 @@
 # ci.yml と release.yml から呼び出す。
 #
 # OCR（数時間かかる）はここでは行わない。OCR 済みの見出し語の候補
-# （data/extract/、data/extract-ndl/、data/recheck/）を `deno task pack-inputs` でまとめ、
+# （data/extract/、data/extract-ndl/、data/recheck/、data/recheck-full/）を `deno task pack-inputs` でまとめ、
 # タグ `inputs` のリリースに置いたものを使う。
 name: Build
 
