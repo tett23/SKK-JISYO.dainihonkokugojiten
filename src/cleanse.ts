@@ -642,6 +642,7 @@ function resolveVoicing(e: CleanEntry, sources: (string | undefined)[], ctx: Con
  *   じ・ず の字（陣、軸、地獄）は じ・ず と書く。対応付けではどちらか決められない
  *   （しぶ-の-ぢん 四武陣 → しぶのじん）ので、SKK の見出しに ぢ・づ が残る候補は採用しない
  *
+ * 連濁・半濁点の条件は、三系統すべてが濁点・半濁点まで同じに読んだ候補には課さない。
  * 満たさない候補は未検証にする
  */
 function requireAgreement(
@@ -673,21 +674,55 @@ function requireAgreement(
     const alt = chars.with(i, b >= 0 ? "ぱぴぷぺぽ"[b] : "ばびぶべぼ"[p]);
     return aligns(alt.join(""), true);
   });
-  const reason = readings.filter((r) => r !== undefined && plain(r) === target).length < 2
+  const agreeing = readings.filter((r) => r !== undefined && plain(r) === target).length;
+  // 三系統すべてが、濁音・半濁音の字を同じに読んだなら（ほかの字の食い違いは問わない）、
+  // 連濁・半濁点の読み分けは OCR の誤読ではないとみなす
+  const VOICED = /[がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ]/;
+  const t = [...target];
+  const unanimous = readings.every((r) => {
+    const c = r === undefined ? undefined : [...plain(r)];
+    return c !== undefined && c.length === t.length &&
+      t.every((ch, i) => !VOICED.test(ch) || c[i] === ch);
+  });
+  const reason = agreeing < 2
     ? "align-single-reading"
     : notations.filter((n) => n !== undefined && shin(n) === notation).length < 2
     ? "align-single-notation"
-    : !withoutRendaku
+    : !withoutRendaku && !unanimous
     ? "align-rendaku"
-    : bpAmbiguous
+    : bpAmbiguous && !unanimous
     ? "align-handakuten"
-    : /[ぢづ]/.test(e.skkKey ?? "")
+    : /[ぢづ]/.test(e.skkKey ?? "") && !resolveDzi(e, ctx)
     ? "align-dzi"
     : undefined;
   if (reason) {
     e.status = "unverified";
     e.reason = reason;
   }
+}
+
+/**
+ * SKK の見出しに残った ぢ・づ を、現代仮名遣いの じ・ず にすべきか決める。
+ * じ・ず に置き換えた見出しが連濁なしで表記に対応付けられるなら、その字の読みがもともと じ・ず
+ * （地獄 → じごく、陣 → じん）なので置き換える。置き換えると対応付けられず、元の見出しが連濁で
+ * 対応付けられるなら（鼻血 → はなぢ、三日月 → みかづき）残す。どちらとも言えなければ false
+ */
+function resolveDzi(e: CleanEntry, ctx: Context): boolean {
+  const key = e.skkKey!;
+  const maxTrailing = [...e.notation!].length === 1 ? 1 : 0;
+  const aligns = (reading: string, rendaku: boolean) =>
+    notationForms(e.notation!, ctx).some((n) =>
+      alignReading(n, reading, ctx.unihan, { maxTrailing, rendaku })
+    );
+  const plainKey = key.replaceAll("ぢ", "じ").replaceAll("づ", "ず");
+  const plainOk = aligns(plainKey, false);
+  const keepOk = aligns(key, true);
+  if (plainOk && !aligns(key, false)) {
+    e.skkKey = plainKey;
+    e.modern = plainKey;
+    return true;
+  }
+  return !plainOk && keepOk;
 }
 
 /**
@@ -940,8 +975,9 @@ export function cleanseVolume(
         requireAgreement(e, readingB, readingC, notationB.notation, notationC.notation, ctx);
       }
     }
-    if (e.status !== "accepted") {
-      // 未検証: 既定の変換結果を使う。動詞・形容詞は送り仮名を最後の 1 文字とする
+    if (e.status !== "accepted" && !(e.reason?.startsWith("align-") && e.skkKey)) {
+      // 未検証: 既定の変換結果を使う（系統間の一致が足りずに未検証にした候補は、対応付けで決めた
+      // 見出しのほうが確かなので、そのまま使う）。動詞・形容詞は送り仮名を最後の 1 文字とする
       const modern = modernVariants(e.reading, { kango: e.kango })[0];
       e.modern = modern;
       if (OKURI_CATEGORIES.has(e.pos.category)) {
