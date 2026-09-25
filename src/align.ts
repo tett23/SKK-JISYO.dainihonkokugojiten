@@ -8,6 +8,8 @@ import type { Unihan } from "./resources.ts";
 export type AlignOptions = {
   /** 表記を読み尽くした後に残ってよい送り仮名の最大文字数 */
   maxTrailing: number;
+  /** 連濁（2 文字目以降の読みの語頭を濁音・半濁音にする）を許すか（既定 true） */
+  rendaku?: boolean;
 };
 
 const toHira = (s: string) =>
@@ -42,9 +44,9 @@ function readingsFor(ch: string, unihan: Unihan): string[] {
 /** 表記に現れない連体助詞（貝柱 = かひ-の-はしら、秋宮人 = あき-の-みやびと） */
 const IMPLICIT_PARTICLES = ["の", "つ", "が"];
 
-function variants(r: string, notFirst: boolean, notLast: boolean): string[] {
+function variants(r: string, notFirst: boolean, notLast: boolean, rendaku: boolean): string[] {
   const out = [r];
-  if (notFirst) {
+  if (notFirst && rendaku) {
     const v = voiced(r[0]);
     if (v) out.push(v + r.slice(1));
     const p = semiVoiced(r[0]);
@@ -58,7 +60,7 @@ export function alignReading(
   notation: string,
   reading: string,
   unihan: Unihan,
-  { maxTrailing }: AlignOptions,
+  { maxTrailing, rendaku = true }: AlignOptions,
 ): boolean {
   const chars = [...notation];
   const seen = new Set<string>();
@@ -74,7 +76,7 @@ export function alignReading(
     }
     const base = ch === "々" || ch === "〻" ? prev : readingsFor(ch, unihan);
     for (const r of base) {
-      for (const v of variants(r, i > 0, i < chars.length - 1)) {
+      for (const v of variants(r, i > 0, i < chars.length - 1, rendaku)) {
         if (reading.startsWith(v, j) && rec(i + 1, j + v.length, base)) return true;
       }
     }

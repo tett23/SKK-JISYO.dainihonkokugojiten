@@ -58,6 +58,7 @@ accuracy sample  3 つの辞書（検証済み・L 除外・未検証）から�
        --n <件数>（既定 450） --seed <シード値,...>（既定は乱数。複数なら件数を等分）
        使ったシード値と件数は docs/accuracy/<label>/sample.json に記録し、同じラベルでは再利用する。
        --label <名前>（既定 latest） --no-images（切り出しを作らない） --judge <判定の方法>
+       --dicts <辞書,...>（verified, noL, unverified。既定 すべて）
        ほかのラベルで使ったシード値は拒む（過去の評価を再現するときだけ --reuse-seed を付ける）。
 accuracy report  判定を集計して正解率と 95% 信頼区間（Wilson）を求め、グラフ
        （docs/accuracy/<label>.svg）と README の表を更新する。 --label <名前>
@@ -281,6 +282,7 @@ if (import.meta.main) {
       "target",
       "zoom-min",
       "human-check",
+      "dicts",
     ],
     default: { images: true },
     negatable: ["images"],
@@ -361,11 +363,20 @@ if (import.meta.main) {
         );
         Deno.exit(1);
       }
+      const dicts = args.dicts
+        ? String(args.dicts).split(",") as typeof acc.DICTIONARIES[number][]
+        : meta?.dicts ?? [...acc.DICTIONARIES];
+      const unknown = dicts.filter((d) => !acc.DICTIONARIES.includes(d));
+      if (unknown.length > 0) {
+        console.error(`--dicts には ${acc.DICTIONARIES.join(", ")} を指定してください: ${unknown}`);
+        Deno.exit(1);
+      }
       const samples = acc.drawSamples(volumes, (e) => inNoL(L, e), n, seeds);
       const same = meta && meta.n === n && meta.seeds.join(",") === seeds.join(",");
       await acc.writeSampleMeta(docsDir, label, {
         n,
         seeds,
+        ...(dicts.length < acc.DICTIONARIES.length ? { dicts } : {}),
         sampledAt: new Date().toISOString(),
         commit: await acc.currentCommit(REPO_ROOT),
         judge: args.judge ?? meta?.judge ?? acc.DEFAULT_JUDGE,
@@ -391,6 +402,7 @@ if (import.meta.main) {
         distDir: DIST_DIR,
         label,
         images: args.images,
+        dicts,
       });
       for (const [name, s] of Object.entries(summary)) {
         console.log(`  ${name}: ${s.total} 件（未判定 ${s.pending} 件）`);
@@ -400,9 +412,9 @@ if (import.meta.main) {
       Deno.exit(0);
     }
     if (sub === "report") {
-      const results = await acc.computeAccuracy(docsDir, label);
-      const svg = acc.accuracyPaths.svg(docsDir, label);
       let meta = await acc.readSampleMeta(docsDir, label);
+      const results = await acc.computeAccuracy(docsDir, label, meta?.dicts);
+      const svg = acc.accuracyPaths.svg(docsDir, label);
       if (meta && (args.judge || args["human-check"])) {
         meta = {
           ...meta,

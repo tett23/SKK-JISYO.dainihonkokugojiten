@@ -40,6 +40,8 @@ export type SampleMeta = {
   n: number;
   seeds: number[];
   sampledAt: string;
+  /** 評価した辞書（省略時は 3 つとも） */
+  dicts?: DictionaryName[];
   /** 抜き取ったときのコミット（作業ツリーに変更があれば -dirty を付ける） */
   commit?: string;
   /** 判定の方法（グラフの注記に出す） */
@@ -247,18 +249,19 @@ async function knownJudgments(docsDir: string): Promise<Map<string, Row>> {
 
 export async function writeSamples(
   samples: Record<DictionaryName, Item[]>,
-  { docsDir, distDir, label, images }: {
+  { docsDir, distDir, label, images, dicts = [...DICTIONARIES] }: {
     docsDir: string;
     distDir: string;
     label: string;
     images: boolean;
+    dicts?: DictionaryName[];
   },
-): Promise<Record<DictionaryName, { total: number; pending: number }>> {
+): Promise<Partial<Record<DictionaryName, { total: number; pending: number }>>> {
   const known = await knownJudgments(docsDir);
   const sheets = accuracyPaths.sheets(distDir, label);
   await ensureDir(sheets);
-  const summary = {} as Record<DictionaryName, { total: number; pending: number }>;
-  for (const name of DICTIONARIES) {
+  const summary: Partial<Record<DictionaryName, { total: number; pending: number }>> = {};
+  for (const name of dicts) {
     const items = samples[name];
     const rows = items.map(({ e }, i): Row => {
       const r = {
@@ -312,9 +315,13 @@ export type AccuracyResult = {
   errors: Row[];
 };
 
-export async function computeAccuracy(docsDir: string, label: string): Promise<AccuracyResult[]> {
+export async function computeAccuracy(
+  docsDir: string,
+  label: string,
+  dicts: readonly DictionaryName[] = DICTIONARIES,
+): Promise<AccuracyResult[]> {
   const results: AccuracyResult[] = [];
-  for (const name of DICTIONARIES) {
+  for (const name of dicts) {
     const rows = parseTsv(await Deno.readTextFile(accuracyPaths.tsv(docsDir, label, name)));
     const pending = rows.filter((r) => r.judgment !== "o" && r.judgment !== "x");
     if (pending.length > 0) {

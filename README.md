@@ -136,11 +136,12 @@ deno task accuracy report --label v1.0.0 --human-check "AI の x 全件と o 50 
 
 - `sample` のシード値は既定で乱数。ほかのラベルで使ったシード値を指定すると止まる（過去の評価を再現するときだけ `--reuse-seed` を付ける）。
 - 抜き取りの条件（`sample.json`）は判定を記入する前にコミットする。
+  一覧（`*.tsv`）は過去の判定を引き継いで判定済みの行を含むことがあるので、このコミットには入れない。
   `report` は、`sample.json` を最初に含むコミットが判定（o / x）を最初に含むコミットより前（祖先）にあるかを git の履歴で確かめ、結果を図と上の表の下に出す。
 
 ```sh
 deno task accuracy sample --label v1.1.0
-git add docs/accuracy/v1.1.0 && git commit -m "v1.1.0 の正解率の抜き取り条件を記録する"   # 判定の前にコミットする
+git add docs/accuracy/v1.1.0/sample.json && git commit -m "v1.1.0 の正解率の抜き取り条件を記録する"   # 判定の前に、抜き取りの条件だけをコミットする
 # 判定を記入する
 deno task accuracy report --label v1.1.0
 git add docs/accuracy README.md && git commit -m "v1.1.0 の正解率を記録する"
