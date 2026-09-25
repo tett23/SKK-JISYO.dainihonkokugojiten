@@ -394,12 +394,12 @@ export async function checkPreregistration(
   note?: string,
 ): Promise<Preregistration> {
   const rel = (p: string) => p.slice(repoRoot.length).replace(/^\//, "");
-  // ラベルの付け替え（ディレクトリ名の変更）をまたいで履歴をたどる。各コミットでのパスも返す
+  // ラベルの付け替え（ディレクトリ名の変更）をまたいで履歴をたどる。各コミットでのパスも返す。
+  // --follow は --reverse と併せると効かないので、新しい順に読んでから古い順に並べ替える
   const commits = async (path: string): Promise<Commit[]> => {
     const { text } = await runGit(
       repoRoot,
       "log",
-      "--reverse",
       "--follow",
       "--name-only",
       "--format=@%H %h %cs",
@@ -413,7 +413,7 @@ export async function checkPreregistration(
         out.push({ full, hash, date, path: rel(path) });
       } else if (out.length > 0) out[out.length - 1].path = l;
     }
-    return out;
+    return out.reverse();
   };
   const seedCommit = (await commits(accuracyPaths.meta(docsDir, label)))[0];
   let judgedCommit: Commit | undefined;
