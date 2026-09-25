@@ -734,10 +734,24 @@ ${meta?.caveat ? `- 注意: ${meta.caveat}\n` : ""}`;
 const START = "<!-- accuracy:start -->";
 const END = "<!-- accuracy:end -->";
 
-/** README の <!-- accuracy:start --> 〜 <!-- accuracy:end --> を置き換える */
-export function replaceSection(readme: string, body: string): string {
+/**
+ * README の <!-- accuracy:start --> 〜 <!-- accuracy:end --> の中の、ラベルごとの区間
+ * （<!-- accuracy:<label>:start --> 〜 <!-- accuracy:<label>:end -->）を置き換える。
+ * 無ければ先頭（新しい評価ほど上）に加える。過去の評価の結果は消さない
+ */
+export function replaceSection(readme: string, body: string, label: string): string {
   const a = readme.indexOf(START);
   const b = readme.indexOf(END);
   if (a < 0 || b < a) throw new Error(`README に ${START} と ${END} がありません`);
-  return readme.slice(0, a + START.length) + "\n\n" + body + "\n" + readme.slice(b);
+  const s = `<!-- accuracy:${label}:start -->`;
+  const e = `<!-- accuracy:${label}:end -->`;
+  const block = `${s}\n\n### ${label}\n\n${body}\n${e}`;
+  const inner = readme.slice(a + START.length, b);
+  const i = inner.indexOf(s);
+  const j = inner.indexOf(e);
+  const rest = inner.trim();
+  const next = i >= 0 && j > i
+    ? inner.slice(0, i) + block + inner.slice(j + e.length)
+    : "\n\n" + block + (rest ? "\n\n" + rest : "") + "\n\n";
+  return readme.slice(0, a + START.length) + next + readme.slice(b);
 }

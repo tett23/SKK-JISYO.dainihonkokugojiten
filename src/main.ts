@@ -452,7 +452,7 @@ if (import.meta.main) {
       );
       await Deno.writeTextFile(
         readmePath,
-        acc.replaceSection(await Deno.readTextFile(readmePath), body),
+        acc.replaceSection(await Deno.readTextFile(readmePath), body, label),
       );
       // 表の列幅などを deno fmt の形にそろえる（fmt --check を通すため）
       await new Deno.Command(Deno.execPath(), { args: ["fmt", "--quiet", readmePath] }).output();

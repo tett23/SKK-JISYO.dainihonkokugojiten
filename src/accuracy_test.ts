@@ -30,12 +30,20 @@ Deno.test("drawMany: シード値ごとに等分して抜き取り、重複を�
   assertEquals(drawMany(pool as any, 30, [1, 2, 3]), got);
 });
 
-Deno.test("replaceSection: README の区間だけを置き換える", () => {
-  const readme = "a\n<!-- accuracy:start -->\nold\n<!-- accuracy:end -->\nb\n";
+Deno.test("replaceSection: ラベルごとの区間を置き換え、無ければ先頭に加える", () => {
+  const empty = "a\n<!-- accuracy:start -->\n<!-- accuracy:end -->\nb\n";
+  const v1 = replaceSection(empty, "one\n", "v1");
   assertEquals(
-    replaceSection(readme, "new\n"),
-    "a\n<!-- accuracy:start -->\n\nnew\n\n<!-- accuracy:end -->\nb\n",
+    v1,
+    "a\n<!-- accuracy:start -->\n\n<!-- accuracy:v1:start -->\n\n### v1\n\none\n\n<!-- accuracy:v1:end -->\n\n<!-- accuracy:end -->\nb\n",
   );
+  const v2 = replaceSection(v1, "two\n", "v2");
+  assertEquals(v2.indexOf("### v2") < v2.indexOf("### v1"), true);
+  const v1b = replaceSection(v2, "ONE\n", "v1");
+  assertEquals(v1b.includes("one"), false);
+  assertEquals(v1b.includes("ONE") && v1b.includes("two"), true);
+  // 置き換えても区間の数は変わらない
+  assertEquals(v1b.split("### ").length, 3);
 });
 
 Deno.test("seedsUsedElsewhere: ほかのラベルで使ったシード値だけを返す", async () => {
