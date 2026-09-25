@@ -9,6 +9,7 @@ import {
   FIRST_EDITION_YEARS,
   IMAGE_INTERVAL_MS,
   paths,
+  REPO_ROOT,
 } from "./config.ts";
 import { BlockedError, download } from "./http.ts";
 import { imageFileName, isInternetPublic, ndlUrls, parseManifest } from "./ndl.ts";
@@ -51,9 +52,21 @@ build  クレンジング結果から SKK 辞書とレポートを dist/ に出�
 recheck  検証済み・未検証の候補のうち NDL 側 OCR と読みが一致しないものの見出しを切り出して
        ndlocr-lite で読み直し、data/recheck/<pid>.json に保存する（検証済みを先に処理する）。
        --status <accepted|unverified>  対象を絞る
+accuracy sample  3 つの辞書（検証済み・L 除外・未検証）から候補を無作為に抜き取り、判定用の一覧
+       （docs/accuracy/<label>/*.tsv）と紙面の切り出し（dist/accuracy/<label>/）を出力する。
+       過去の同じ候補の判定は引き継ぐ。一覧の judgment 列に o / x を記入する。
+       --n <件数>（既定 450） --seed <シード値,...>（既定は乱数。複数なら件数を等分）
+       使ったシード値と件数は docs/accuracy/<label>/sample.json に記録し、同じラベルでは再利用する。
+       --label <名前>（既定 latest） --no-images（切り出しを作らない） --judge <判定の方法>
+       ほかのラベルで使ったシード値は拒む（過去の評価を再現するときだけ --reuse-seed を付ける）。
+accuracy report  判定を集計して正解率と 95% 信頼区間（Wilson）を求め、グラフ
+       （docs/accuracy/<label>.svg）と README の表を更新する。 --label <名前>
+       --target <基準>（既定 0.99） --zoom-min <拡大図の軸の下限>（既定 0.95）
+       --judge <判定の方法>（既定「AI（Claude）が紙面画像と照合」。sample.json に記録する）
+       --human-check <人が行った確認の内容>（sample.json に記録する）
 review  正解率の抜き取り評価用に、区分ごとに候補を無作為に抜き取り、紙面の切り出しと一覧を
        dist/review/ に出力する。
-       --n <件数>（既定 30） --seed <種>（既定 1） --strata <区分,...>（既定 すべて）
+       --n <件数>（既定 30） --seed <シード値>（既定 1） --strata <区分,...>（既定 すべて）
 compare <旧 cleanse ディレクトリ> <新 cleanse ディレクトリ>  2 つのビルドを比べた結果を出力する。
 all    fetch → ocr → work → extract を順に実行する。`;
 
@@ -255,8 +268,22 @@ async function buildStep(pids: string[]) {
 
 if (import.meta.main) {
   const args = parseArgs(Deno.args, {
-    boolean: ["force", "force-ocr", "help"],
-    string: ["pages", "source", "status", "n", "seed", "strata"],
+    boolean: ["force", "force-ocr", "help", "images", "reuse-seed"],
+    string: [
+      "pages",
+      "source",
+      "status",
+      "n",
+      "seed",
+      "strata",
+      "label",
+      "judge",
+      "target",
+      "zoom-min",
+      "human-check",
+    ],
+    default: { images: true },
+    negatable: ["images"],
   });
   const [command, ...rest] = args._.map(String);
   if (args.help || !command) {
@@ -303,9 +330,139 @@ if (import.meta.main) {
     }
     Deno.exit(0);
   }
+  if (command === "accuracy") {
+    const sub = rest[0];
+    const label = args.label ?? "latest";
+    const docsDir = join(REPO_ROOT, "docs");
+    const acc = await import("./accuracy.ts");
+    if (sub === "sample") {
+      const { inNoL } = await import("./build.ts");
+      const L = await loadSkkL();
+      const volumes: CleanVolume[] = [];
+      for (const v of DEFAULT_VOLUMES) {
+        volumes.push(JSON.parse(await Deno.readTextFile(paths.cleanseJson(v.pid))));
+      }
+      // シード値は既定で乱数。--seed で固定する。同じラベルで抜き取り直すときは記録したシード値と件数を使い、
+      // 判定済みの一覧を別の抜き取りで置き換えないようにする
+      const meta = await acc.readSampleMeta(docsDir, label);
+      const seeds = args.seed
+        ? String(args.seed).split(",").map(Number)
+        : meta?.seeds ?? [crypto.getRandomValues(new Uint32Array(1))[0]];
+      const n = Number(args.n ?? meta?.n ?? 450);
+      // 版をまたいで同じシード値を使わない（同じ標本で測り続けると、その標本に合わせた調整が効いて見える）
+      const reused = await acc.seedsUsedElsewhere(docsDir, label, seeds);
+      if (reused.length > 0 && !args["reuse-seed"]) {
+        console.error(
+          `シード値 ${
+            reused.map((r) => `${r.seeds.join(",")}（${r.label}）`).join("、")
+          } はほかの評価で使っています。` +
+            "新しいシード値を使ってください（--seed を省くと乱数になる）。" +
+            "過去の評価を再現するときだけ --reuse-seed を付けます。",
+        );
+        Deno.exit(1);
+      }
+      const samples = acc.drawSamples(volumes, (e) => inNoL(L, e), n, seeds);
+      const same = meta && meta.n === n && meta.seeds.join(",") === seeds.join(",");
+      await acc.writeSampleMeta(docsDir, label, {
+        n,
+        seeds,
+        sampledAt: new Date().toISOString(),
+        commit: await acc.currentCommit(REPO_ROOT),
+        judge: args.judge ?? meta?.judge ?? acc.DEFAULT_JUDGE,
+        inputs: await acc.digestFiles(
+          DEFAULT_VOLUMES.flatMap((v) => [
+            paths.extractJson(v.pid),
+            paths.extractNdlJson(v.pid),
+            paths.recheckJson(v.pid),
+          ]),
+        ),
+        // 同じ条件で抜き取り直したときは、記録済みの説明を引き継ぐ
+        ...(same
+          ? {
+            preregistrationNote: meta.preregistrationNote,
+            humanCheck: meta.humanCheck,
+            caveat: meta.caveat,
+          }
+          : {}),
+      });
+      console.log(`  n = ${n}, seed = ${seeds.join(",")}`);
+      const summary = await acc.writeSamples(samples, {
+        docsDir,
+        distDir: DIST_DIR,
+        label,
+        images: args.images,
+      });
+      for (const [name, s] of Object.entries(summary)) {
+        console.log(`  ${name}: ${s.total} 件（未判定 ${s.pending} 件）`);
+      }
+      console.log(`  一覧: ${join(docsDir, "accuracy", label)}`);
+      console.log(`  紙面: ${acc.accuracyPaths.sheets(DIST_DIR, label)}`);
+      Deno.exit(0);
+    }
+    if (sub === "report") {
+      const results = await acc.computeAccuracy(docsDir, label);
+      const svg = acc.accuracyPaths.svg(docsDir, label);
+      let meta = await acc.readSampleMeta(docsDir, label);
+      if (meta && (args.judge || args["human-check"])) {
+        meta = {
+          ...meta,
+          judge: args.judge ?? meta.judge,
+          humanCheck: args["human-check"] ?? meta.humanCheck,
+        };
+        await acc.writeSampleMeta(docsDir, label, meta);
+      }
+      const prereg = await acc.checkPreregistration(
+        REPO_ROOT,
+        docsDir,
+        label,
+        meta?.preregistrationNote,
+      );
+      const humanCheck = await acc.checkHumanReview(REPO_ROOT, docsDir, label, meta);
+      await Deno.writeTextFile(
+        svg,
+        acc.renderSvg(results, label, {
+          meta,
+          target: Number(args.target ?? 0.99),
+          zoomMin: Number(args["zoom-min"] ?? 0.95),
+          measuredAt: new Date().toISOString().slice(0, 10),
+          preregistration: prereg,
+          humanCheck,
+        }),
+      );
+      const readmePath = join(REPO_ROOT, "README.md");
+      const body = acc.renderMarkdown(
+        results,
+        label,
+        `docs/accuracy/${label}.svg`,
+        prereg,
+        humanCheck,
+        meta,
+      );
+      await Deno.writeTextFile(
+        readmePath,
+        acc.replaceSection(await Deno.readTextFile(readmePath), body),
+      );
+      // 表の列幅などを deno fmt の形にそろえる（fmt --check を通すため）
+      await new Deno.Command(Deno.execPath(), { args: ["fmt", "--quiet", readmePath] }).output();
+      for (const r of results) {
+        console.log(
+          `  ${r.file}: ${r.correct}/${r.n} = ${(r.rate * 100).toFixed(1)}%` +
+            `（95% CI ${(r.ci[0] * 100).toFixed(1)}〜${(r.ci[1] * 100).toFixed(1)}%）`,
+        );
+      }
+      console.log(`  シード値の事前記録: ${prereg.summary}`);
+      console.log(`  人の確認: ${humanCheck.summary}`);
+      console.log(`  -> ${svg}, ${readmePath}`);
+      Deno.exit(0);
+    }
+    console.error("accuracy には sample か report を指定してください");
+    Deno.exit(1);
+  }
   if (command === "review") {
     const { STRATA, writeReview } = await import("./review.ts");
+    const { inNoL } = await import("./build.ts");
     const names = args.strata ? String(args.strata).split(",") : STRATA.map((s) => s.name);
+    const L = names.includes("noL") ? await loadSkkL() : undefined;
     const volumes: CleanVolume[] = [];
     for (const pid of pids) {
       volumes.push(JSON.parse(await Deno.readTextFile(paths.cleanseJson(pid))));
@@ -315,6 +472,7 @@ if (import.meta.main) {
       n: Number(args.n ?? 30),
       seed: Number(args.seed ?? 1),
       strata: STRATA.filter((s) => names.includes(s.name)),
+      ctx: { inNoL: (e) => (L ? inNoL(L, e) : false) },
     });
     console.log(`  -> ${out}`);
     Deno.exit(0);

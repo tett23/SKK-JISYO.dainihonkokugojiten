@@ -5,6 +5,7 @@ import { paths } from "./config.ts";
 import type { CleanEntry, CleanVolume } from "./cleanse.ts";
 import { imageFileName } from "./ndl.ts";
 import { subImage } from "./recheck.ts";
+import { sample } from "./sample.ts";
 
 /**
  * 正解率の抜き取り評価用に、候補を区分ごとに無作為に抜き取り、紙面の見出しの切り出しを
@@ -12,7 +13,13 @@ import { subImage } from "./recheck.ts";
  * 一覧の judgment 列に人が正誤（o / x）を記入する。
  */
 
-export type Stratum = { name: string; filter: (e: CleanEntry) => boolean };
+/** 区分の判定に使う外部データ（L 除外辞書の区分に SKK-JISYO.L が要る） */
+export type StratumContext = { inNoL: (e: CleanEntry) => boolean };
+
+export type Stratum = {
+  name: string;
+  filter: (e: CleanEntry, ctx: StratumContext) => boolean;
+};
 
 const plain = (r: string) => r.replaceAll(/[-ー]/g, "");
 const ndlAgree = (e: CleanEntry) =>
@@ -35,27 +42,9 @@ export const STRATA: Stratum[] = [
   { name: "dict-reading", filter: (e) => e.status === "accepted" && e.method === "dict-reading" },
   { name: "voted", filter: (e) => e.status === "accepted" && voted(e) },
   { name: "unverified", filter: (e) => e.status === "unverified" },
+  // 辞書ファイルごとの正解率の評価用（検証済み = all、未検証 = unverified）
+  { name: "noL", filter: (e, ctx) => ctx.inNoL(e) },
 ];
-
-/** 種付きの乱数（mulberry32） */
-function random(seed: number) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function sample<T>(xs: T[], n: number, seed: number): T[] {
-  const rnd = random(seed);
-  const a = [...xs];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a.slice(0, n);
-}
 
 const PER_SHEET = 15;
 
@@ -73,13 +62,18 @@ async function crop(pid: string, e: CleanEntry): Promise<Image> {
 export async function writeReview(
   volumes: CleanVolume[],
   outDir: string,
-  { n, seed, strata }: { n: number; seed: number; strata: Stratum[] },
+  { n, seed, strata, ctx }: {
+    n: number;
+    seed: number;
+    strata: Stratum[];
+    ctx: StratumContext;
+  },
 ): Promise<void> {
   await ensureDir(outDir);
   const all = volumes.flatMap((v) => v.entries.map((e) => ({ pid: v.pid, e })));
   const summary: string[] = [];
   for (const s of strata) {
-    const pool = all.filter(({ e }) => s.filter(e));
+    const pool = all.filter(({ e }) => s.filter(e, ctx));
     const picked = sample(pool, n, seed);
     summary.push(`${s.name}\t${pool.length}\t${picked.length}`);
     const rows = ["no\tid\tskk_key\tnotation\treading\tmethod\tfixes\tjudgment"];
