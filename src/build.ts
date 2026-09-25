@@ -62,6 +62,12 @@ export function renderNotes(notes: Notes): string {
 export const annotation = (e: CleanEntry) =>
   renderNotes(new Map([[historicalOf(e), new Set([posLabel(e)])]]));
 
+/** 候補が L 除外辞書（.noL）に入るか: 表記（新字体・底本の字体）のどちらかが L に無い */
+export function inNoL(L: SkkDict, e: CleanEntry): boolean {
+  if (e.status !== "accepted" || !e.skkKey || !e.shinjitai || !e.notation) return false;
+  return [e.shinjitai, e.notation].some((w) => !inL(L, e.skkKey!, w, !!e.okuri));
+}
+
 function addEntry(dict: Dict, e: CleanEntry) {
   if (!e.skkKey || !e.shinjitai || !e.notation) return;
   const map = e.okuri ? dict.ari : dict.nasi;
@@ -80,7 +86,7 @@ function addEntry(dict: Dict, e: CleanEntry) {
   }
 }
 
-function inL(L: SkkDict, key: string, word: string, okuri: boolean): boolean {
+export function inL(L: SkkDict, key: string, word: string, okuri: boolean): boolean {
   const words = (okuri ? L.okuriAri : L.okuriNasi).get(key) ?? [];
   return words.some((w) => w === word || (!okuri && skeleton(w) === word));
 }

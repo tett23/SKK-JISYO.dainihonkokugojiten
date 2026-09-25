@@ -26,6 +26,9 @@ export const DATA_DIR = Deno.env.get("DATA_DIR") ?? join(ROOT, "data");
 /** ビルドした辞書・レポートの出力先 */
 export const DIST_DIR = Deno.env.get("DIST_DIR") ?? join(ROOT, "dist");
 
+/** リポジトリの直下（README の更新に使う） */
+export const REPO_ROOT = ROOT;
+
 export const paths = {
   /** NDL から取得したデータをそのまま保存するディレクトリ */
   rawNdl: (pid: string) => join(DATA_DIR, "raw", "ndl", pid),

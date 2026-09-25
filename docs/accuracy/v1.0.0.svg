@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 736" width="720" height="736" role="img" aria-labelledby="title desc">
+  <title id="title">辞書ごとの正解率（v1.0.0）</title>
+  <desc id="desc">SKK-JISYO.dainihonkokugojiten: 99.6%（95% 信頼区間 98.4%〜99.9%、448/450）、SKK-JISYO.dainihonkokugojiten.noL: 99.1%（95% 信頼区間 97.7%〜99.7%、446/450）、SKK-JISYO.dainihonkokugojiten.unverified: 55.6%（95% 信頼区間 50.9%〜60.1%、250/450）。点は正解率、線は 95% 信頼区間（Wilson スコア区間）、破線は基準 99.0%。 判定: AI（Claude）が紙面画像と照合（SKK の見出しと表記の両方が紙面の見出しと合うものを正とする。注釈は評価の対象外）。 抜き取り: 各辞書から無作為に 450 件（150 件ずつ 3 回、シード値 101、202、303）、2026-09-25、コミット cb202ad (v1.0.0)。 図の出力: 2026-09-25。 シード値の事前記録: 未確認（シード値 101、202、303 は beta5 の評価で各 150 件を判定する前に決めたが、初めて記録したのは結果と同じコミット a6bc598 のため、履歴では確かめられない） 人の確認: 必要だが未実施（理由: 最初の評価） 注意: 検証済みの辞書の抜き取りは beta5 の評価と同じ標本（L 除外辞書もその一部を使う）。この標本は規則の調整には使っていないが、beta ごとに新しい標本で測り、点推定が初めて 99% を超えた回で止めて 1.0.0 としたため、偶然高めに出た回を採りやすく、正解率は高めに出ている可能性がある。1.0.0 の根拠は点推定が 99% 以上であることで、信頼区間の下限（98.4%）は 99% を下回っている</desc>
+  <style>
+    svg { --surface: #fcfcfb; --text-primary: #0b0b0b; --text-secondary: #52514e; --grid: #e4e3df; --series-1: #2a78d6; --target: #52514e; }
+    @media (prefers-color-scheme: dark) {
+      svg { --surface: #1a1a19; --text-primary: #ffffff; --text-secondary: #c3c2b7; --grid: #3a3a37; --series-1: #3987e5; --target: #c3c2b7; }
+    }
+    .bg { fill: var(--surface); }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+    .title { fill: var(--text-primary); font-size: 16px; font-weight: 600; }
+    .panel-title { fill: var(--text-primary); font-size: 12px; font-weight: 600; }
+    .label { fill: var(--text-primary); font-size: 13px; }
+    .value { fill: var(--text-primary); font-size: 13px; font-weight: 600; }
+    .sub { fill: var(--text-secondary); font-size: 11px; font-weight: 400; }
+    .count { fill: var(--text-secondary); font-size: 12px; font-weight: 400; }
+    .note { fill: var(--text-secondary); font-size: 10.5px; }
+    .grid { stroke: var(--grid); stroke-width: 1; }
+    .target { stroke: var(--target); stroke-width: 1; stroke-dasharray: 4 3; }
+    .target-label { fill: var(--text-secondary); font-size: 10.5px; }
+    .ci { stroke: var(--series-1); stroke-width: 2; stroke-linecap: round; }
+    .dot { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
+  </style>
+  <rect class="bg" width="720" height="736" rx="8"/>
+  <text class="title" x="24" y="34">辞書ごとの正解率と 95% 信頼区間（v1.0.0）</text>
+  <text class="panel-title" x="24" y="70">0〜100% の軸</text>
+  <line class="grid" x1="24" x2="24" y1="94" y2="292"/>
+  <text class="sub" x="24" y="310" text-anchor="middle">0%</text>
+  <line class="grid" x1="160.5" x2="160.5" y1="94" y2="292"/>
+  <text class="sub" x="160.5" y="310" text-anchor="middle">25%</text>
+  <line class="grid" x1="297" x2="297" y1="94" y2="292"/>
+  <text class="sub" x="297" y="310" text-anchor="middle">50%</text>
+  <line class="grid" x1="433.5" x2="433.5" y1="94" y2="292"/>
+  <text class="sub" x="433.5" y="310" text-anchor="middle">75%</text>
+  <line class="grid" x1="570" x2="570" y1="94" y2="292"/>
+  <text class="sub" x="570" y="310" text-anchor="middle">100%</text>
+  <line class="target" x1="564.54" x2="564.54" y1="88" y2="292"/>
+  <text class="target-label" x="564.54" y="84" text-anchor="middle">基準 99%</text>
+  <g>
+    <title>SKK-JISYO.dainihonkokugojiten: 99.6%（95% 信頼区間 98.4%〜99.9%、448/450）</title>
+    <text class="label" x="24" y="110">SKK-JISYO.dainihonkokugojiten<tspan class="count" dx="10">サンプル数 450 件（正しい 448 件）</tspan></text>
+    <line class="ci" x1="561.2321708262182" x2="569.3340578304998" y1="132" y2="132"/>
+    <line class="ci" x1="561.2321708262182" x2="561.2321708262182" y1="126" y2="138"/>
+    <line class="ci" x1="569.3340578304998" x2="569.3340578304998" y1="126" y2="138"/>
+    <circle class="dot" cx="567.5733333333333" cy="132" r="5"/>
+    <text class="value" x="586" y="130">99.6%</text>
+    <text class="sub" x="586" y="146">98.4%〜99.9%</text>
+  </g>
+  <g>
+    <title>SKK-JISYO.dainihonkokugojiten.noL: 99.1%（95% 信頼区間 97.7%〜99.7%、446/450）</title>
+    <text class="label" x="24" y="176">SKK-JISYO.dainihonkokugojiten.noL<tspan class="count" dx="10">サンプル数 450 件（正しい 446 件）</tspan></text>
+    <line class="ci" x1="557.6442222313731" x2="568.1097532535358" y1="198" y2="198"/>
+    <line class="ci" x1="557.6442222313731" x2="557.6442222313731" y1="192" y2="204"/>
+    <line class="ci" x1="568.1097532535358" x2="568.1097532535358" y1="192" y2="204"/>
+    <circle class="dot" cx="565.1466666666666" cy="198" r="5"/>
+    <text class="value" x="586" y="196">99.1%</text>
+    <text class="sub" x="586" y="212">97.7%〜99.7%</text>
+  </g>
+  <g>
+    <title>SKK-JISYO.dainihonkokugojiten.unverified: 55.6%（95% 信頼区間 50.9%〜60.1%、250/450）</title>
+    <text class="label" x="24" y="242">SKK-JISYO.dainihonkokugojiten.unverified<tspan class="count" dx="10">サンプル数 450 件（正しい 250 件）</tspan></text>
+    <line class="ci" x1="302.1143100407938" x2="352.0388546068204" y1="264" y2="264"/>
+    <line class="ci" x1="302.1143100407938" x2="302.1143100407938" y1="258" y2="270"/>
+    <line class="ci" x1="352.0388546068204" x2="352.0388546068204" y1="258" y2="270"/>
+    <circle class="dot" cx="327.33333333333337" cy="264" r="5"/>
+    <text class="value" x="586" y="262">55.6%</text>
+    <text class="sub" x="586" y="278">50.9%〜60.1%</text>
+  </g>
+  <text class="panel-title" x="24" y="344">拡大（95〜100% の軸）</text>
+  <line class="grid" x1="24" x2="24" y1="368" y2="500"/>
+  <text class="sub" x="24" y="518" text-anchor="middle">95%</text>
+  <line class="grid" x1="133.2" x2="133.2" y1="368" y2="500"/>
+  <text class="sub" x="133.2" y="518" text-anchor="middle">96%</text>
+  <line class="grid" x1="242.4" x2="242.4" y1="368" y2="500"/>
+  <text class="sub" x="242.4" y="518" text-anchor="middle">97%</text>
+  <line class="grid" x1="351.59999999999997" x2="351.59999999999997" y1="368" y2="500"/>
+  <text class="sub" x="351.59999999999997" y="518" text-anchor="middle">98%</text>
+  <line class="grid" x1="460.8" x2="460.8" y1="368" y2="500"/>
+  <text class="sub" x="460.8" y="518" text-anchor="middle">99%</text>
+  <line class="grid" x1="570" x2="570" y1="368" y2="500"/>
+  <text class="sub" x="570" y="518" text-anchor="middle">100%</text>
+  <line class="target" x1="460.8" x2="460.8" y1="362" y2="500"/>
+  <text class="target-label" x="460.8" y="358" text-anchor="middle">基準 99%</text>
+  <g>
+    <title>SKK-JISYO.dainihonkokugojiten: 99.6%（95% 信頼区間 98.4%〜99.9%、448/450）</title>
+    <text class="label" x="24" y="384">SKK-JISYO.dainihonkokugojiten<tspan class="count" dx="10">サンプル数 450 件（正しい 448 件）</tspan></text>
+    <line class="ci" x1="394.6434165243647" x2="556.6811566099965" y1="406" y2="406"/>
+    <line class="ci" x1="394.6434165243647" x2="394.6434165243647" y1="400" y2="412"/>
+    <line class="ci" x1="556.6811566099965" x2="556.6811566099965" y1="400" y2="412"/>
+    <circle class="dot" cx="521.4666666666665" cy="406" r="5"/>
+    <text class="value" x="586" y="404">99.6%</text>
+    <text class="sub" x="586" y="420">98.4%〜99.9%</text>
+  </g>
+  <g>
+    <title>SKK-JISYO.dainihonkokugojiten.noL: 99.1%（95% 信頼区間 97.7%〜99.7%、446/450）</title>
+    <text class="label" x="24" y="450">SKK-JISYO.dainihonkokugojiten.noL<tspan class="count" dx="10">サンプル数 450 件（正しい 446 件）</tspan></text>
+    <line class="ci" x1="322.88444462746145" x2="532.1950650707174" y1="472" y2="472"/>
+    <line class="ci" x1="322.88444462746145" x2="322.88444462746145" y1="466" y2="478"/>
+    <line class="ci" x1="532.1950650707174" x2="532.1950650707174" y1="466" y2="478"/>
+    <circle class="dot" cx="472.93333333333396" cy="472" r="5"/>
+    <text class="value" x="586" y="470">99.1%</text>
+    <text class="sub" x="586" y="486">97.7%〜99.7%</text>
+  </g>
+  <text class="sub" x="24" y="540">範囲外のため載せていない辞書: SKK-JISYO.dainihonkokugojiten.unverified（55.6%）</text>
+  <text class="note" x="24" y="576">点は正解率、線は 95% 信頼区間（Wilson スコア区間）、破線は基準 99.0%。</text>
+  <text class="note" x="24" y="592">判定: AI（Claude）が紙面画像と照合（SKK の見出しと表記の両方が紙面の見出しと合うものを正とする。注釈は評価の対象外）。</text>
+  <text class="note" x="24" y="608">抜き取り: 各辞書から無作為に 450 件（150 件ずつ 3 回、シード値 101、202、303）、2026-09-25、コミット cb202ad (v1.0.0)。</text>
+  <text class="note" x="24" y="624">図の出力: 2026-09-25。</text>
+  <text class="note" x="24" y="640">シード値の事前記録: 未確認（シード値 101、202、303 は beta5 の評価で各 150 件を判定する前に決めたが、初めて記録したのは結果と</text>
+  <text class="note" x="24" y="656">　同じコミット a6bc598 のため、履歴では確かめられない）</text>
+  <text class="note" x="24" y="672">人の確認: 必要だが未実施（理由: 最初の評価）</text>
+  <text class="note" x="24" y="688">注意: 検証済みの辞書の抜き取りは beta5 の評価と同じ標本（L 除外辞書もその一部を使う）。この標本は規則の調整には使っていないが、</text>
+  <text class="note" x="24" y="704">　beta ごとに新しい標本で測り、点推定が初めて 99% を超えた回で止めて 1.0.0 としたため、偶然高めに出た回を採りやすく、正解率は</text>
+  <text class="note" x="24" y="720">　高めに出ている可能性がある。1.0.0 の根拠は点推定が 99% 以上であることで、信頼区間の下限（98.4%）は 99% を下回っている</text>
+</svg>

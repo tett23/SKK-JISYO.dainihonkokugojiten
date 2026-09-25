@@ -9,6 +9,7 @@
     "build": "deno run --allow-read --allow-write --allow-env src/main.ts build",
     "recheck": "deno run --allow-read --allow-write --allow-env --allow-run --allow-net=jsr.io src/main.ts recheck",
     "review": "deno run --allow-read --allow-write --allow-env --allow-net=jsr.io src/main.ts review",
+    "accuracy": "deno run --allow-read --allow-write --allow-env --allow-net=jsr.io --allow-run src/main.ts accuracy",
     "compare": "deno run --allow-read --allow-env src/main.ts compare",
     "pack-inputs": "mkdir -p dist && tar -czf dist/inputs.tar.gz -C data extract extract-ndl recheck",
     "all": "deno run --allow-net --allow-read --allow-write --allow-env --allow-run src/main.ts all",
@@ -22,5 +23,5 @@
     "@std/fs": "jsr:@std/fs@^1",
     "@std/path": "jsr:@std/path@^1"
   },
-  "fmt": { "lineWidth": 100, "proseWrap": "preserve" }
+  "fmt": { "lineWidth": 100, "proseWrap": "preserve", "exclude": ["docs/accuracy/"] }
 }
