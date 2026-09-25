@@ -452,6 +452,19 @@ function resolve(
       : undefined;
   const base = options[0];
   const okuri = OKURI_CATEGORIES.has(pos.category);
+  // NDL 側 OCR の表記で字を削った候補（睡眠 → 睡）は、元の表記のままでも辞書か対応付けで
+  // 通るなら使わない。L は JMdict より先に引くので、削った表記が L にあると、元の表記が
+  // JMdict にあっても削ったほうが採られてしまう。二つの表記を並べた見出し（言譯言別）は
+  // 元の表記のままでは通らないので、これまでどおり削る
+  const baseMatches = (o: Option) =>
+    [base.notation, o.notation].every((n) => n !== undefined) &&
+    (matchL(o.reading, base.notation, pos, kango, ctx) ??
+        matchJM(o.reading, base.notation, pos, kango, ctx) ??
+        matchAlign(o.reading, base.notation, pos, kango, ctx)) !== undefined;
+  options = options.filter((o) =>
+    !(o.reason === "NDL 側 OCR の表記" && [...o.notation].length < [...base.notation].length &&
+      baseMatches(o))
+  );
   // 動詞・形容詞は JMdict の送り仮名から見出しを作れるので、JMdict を先に引く
   if (okuri) {
     for (const o of options) {
@@ -610,6 +623,70 @@ function resolveVoicing(e: CleanEntry, sources: (string | undefined)[], ctx: Con
   if (!self && (e.method === "align" || e.method === "dict-reading")) {
     e.status = "unverified";
     e.reason = "voicing-ambiguous";
+  }
+}
+
+/**
+ * Unihan での対応付けだけで検証した候補に、OCR の系統間の一致を求める。
+ * 対応付けは読みと表記が矛盾しないことしか確かめないので、同じ読みの別の字（屏代幔 → 屏代慢）や、
+ * 濁点の付け外し（き-そつ → ぎ-そつ）を通してしまう。v1.0.0 の L 除外辞書の誤りはすべてこの形だった。
+ *
+ * - 読み: ndlocr-lite（紙面全体）・NDL 側 OCR・見出しの読み直しのうち 2 つ以上が、濁点まで含めて一致する
+ * - 表記: 同じく 2 つ以上が一致する（新字体に直して比べる。旧字体と新字体の違いは食い違いとしない）
+ * - 連濁: 連濁（2 文字目以降の読みの語頭の濁音・半濁音）を許さないと対応付けられない読みは、
+ *   濁点の有無を OCR だけで決めていることになる。二系統が同じように濁点を誤読することがある
+ *   （わか-ばえ 若生、紙面は わか-はえ）ので、採用しない
+ * - 半濁点: バ行とパ行を入れ替えても対応付けられる読みは、半濁点の丸と濁点を OCR だけで
+ *   読み分けていることになる。二系統とも半濁点を濁点と読むことがある（こん-ばく 魂魄、紙面は こん-ぱく）
+ * - ぢ・づ: 現代仮名遣いで ぢ・づ を残すのは連濁（ち→ぢ、つ→づ）と同音の連呼だけで、字音がもともと
+ *   じ・ず の字（陣、軸、地獄）は じ・ず と書く。対応付けではどちらか決められない
+ *   （しぶ-の-ぢん 四武陣 → しぶのじん）ので、SKK の見出しに ぢ・づ が残る候補は採用しない
+ *
+ * 満たさない候補は未検証にする
+ */
+function requireAgreement(
+  e: CleanEntry,
+  readingB: string | undefined,
+  readingC: string | undefined,
+  notationB: string | undefined,
+  notationC: string | undefined,
+  ctx: Context,
+) {
+  const target = plain(e.reading);
+  const readings = [normalizeReading(e.source.reading.replaceAll("ー", "-")), readingB, readingC];
+  const shin = (n: string) => toShinjitai(n, ctx.unihan);
+  const notation = shin(e.notation!);
+  const notations = [normalizeNotation(e.source.notation).notation, notationB, notationC];
+  const maxTrailing = [...e.notation!].length === 1 ? 1 : 0;
+  const aligns = (reading: string, rendaku: boolean) =>
+    modernVariants(reading, { kango: e.kango }).some((v) =>
+      notationForms(e.notation!, ctx).some((n) =>
+        alignReading(n, v, ctx.unihan, { maxTrailing, rendaku })
+      )
+    );
+  const withoutRendaku = aligns(e.reading, false);
+  const chars = [...e.reading];
+  const bpAmbiguous = chars.some((c, i) => {
+    const b = "ばびぶべぼ".indexOf(c);
+    const p = "ぱぴぷぺぽ".indexOf(c);
+    if (b < 0 && p < 0) return false;
+    const alt = chars.with(i, b >= 0 ? "ぱぴぷぺぽ"[b] : "ばびぶべぼ"[p]);
+    return aligns(alt.join(""), true);
+  });
+  const reason = readings.filter((r) => r !== undefined && plain(r) === target).length < 2
+    ? "align-single-reading"
+    : notations.filter((n) => n !== undefined && shin(n) === notation).length < 2
+    ? "align-single-notation"
+    : !withoutRendaku
+    ? "align-rendaku"
+    : bpAmbiguous
+    ? "align-handakuten"
+    : /[ぢづ]/.test(e.skkKey ?? "")
+    ? "align-dzi"
+    : undefined;
+  if (reason) {
+    e.status = "unverified";
+    e.reason = reason;
   }
 }
 
@@ -859,6 +936,9 @@ export function cleanseVolume(
       e.status = "accepted";
       resolveVoicing(e, [e.source.reading.replaceAll("ー", "-"), readingB, readingC], ctx);
       if (e.status === "accepted" && e.method === "align") fixRaToU(e, ctx);
+      if (e.status === "accepted" && e.method === "align") {
+        requireAgreement(e, readingB, readingC, notationB.notation, notationC.notation, ctx);
+      }
     }
     if (e.status !== "accepted") {
       // 未検証: 既定の変換結果を使う。動詞・形容詞は送り仮名を最後の 1 文字とする

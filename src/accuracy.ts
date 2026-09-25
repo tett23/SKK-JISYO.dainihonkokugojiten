@@ -40,6 +40,8 @@ export type SampleMeta = {
   n: number;
   seeds: number[];
   sampledAt: string;
+  /** 評価した辞書（省略時は 3 つとも） */
+  dicts?: DictionaryName[];
   /** 抜き取ったときのコミット（作業ツリーに変更があれば -dirty を付ける） */
   commit?: string;
   /** 判定の方法（グラフの注記に出す） */
@@ -247,18 +249,19 @@ async function knownJudgments(docsDir: string): Promise<Map<string, Row>> {
 
 export async function writeSamples(
   samples: Record<DictionaryName, Item[]>,
-  { docsDir, distDir, label, images }: {
+  { docsDir, distDir, label, images, dicts = [...DICTIONARIES] }: {
     docsDir: string;
     distDir: string;
     label: string;
     images: boolean;
+    dicts?: DictionaryName[];
   },
-): Promise<Record<DictionaryName, { total: number; pending: number }>> {
+): Promise<Partial<Record<DictionaryName, { total: number; pending: number }>>> {
   const known = await knownJudgments(docsDir);
   const sheets = accuracyPaths.sheets(distDir, label);
   await ensureDir(sheets);
-  const summary = {} as Record<DictionaryName, { total: number; pending: number }>;
-  for (const name of DICTIONARIES) {
+  const summary: Partial<Record<DictionaryName, { total: number; pending: number }>> = {};
+  for (const name of dicts) {
     const items = samples[name];
     const rows = items.map(({ e }, i): Row => {
       const r = {
@@ -312,9 +315,13 @@ export type AccuracyResult = {
   errors: Row[];
 };
 
-export async function computeAccuracy(docsDir: string, label: string): Promise<AccuracyResult[]> {
+export async function computeAccuracy(
+  docsDir: string,
+  label: string,
+  dicts: readonly DictionaryName[] = DICTIONARIES,
+): Promise<AccuracyResult[]> {
   const results: AccuracyResult[] = [];
-  for (const name of DICTIONARIES) {
+  for (const name of dicts) {
     const rows = parseTsv(await Deno.readTextFile(accuracyPaths.tsv(docsDir, label, name)));
     const pending = rows.filter((r) => r.judgment !== "o" && r.judgment !== "x");
     if (pending.length > 0) {
@@ -727,10 +734,24 @@ ${meta?.caveat ? `- 注意: ${meta.caveat}\n` : ""}`;
 const START = "<!-- accuracy:start -->";
 const END = "<!-- accuracy:end -->";
 
-/** README の <!-- accuracy:start --> 〜 <!-- accuracy:end --> を置き換える */
-export function replaceSection(readme: string, body: string): string {
+/**
+ * README の <!-- accuracy:start --> 〜 <!-- accuracy:end --> の中の、ラベルごとの区間
+ * （<!-- accuracy:<label>:start --> 〜 <!-- accuracy:<label>:end -->）を置き換える。
+ * 無ければ先頭（新しい評価ほど上）に加える。過去の評価の結果は消さない
+ */
+export function replaceSection(readme: string, body: string, label: string): string {
   const a = readme.indexOf(START);
   const b = readme.indexOf(END);
   if (a < 0 || b < a) throw new Error(`README に ${START} と ${END} がありません`);
-  return readme.slice(0, a + START.length) + "\n\n" + body + "\n" + readme.slice(b);
+  const s = `<!-- accuracy:${label}:start -->`;
+  const e = `<!-- accuracy:${label}:end -->`;
+  const block = `${s}\n\n### ${label}\n\n${body}\n${e}`;
+  const inner = readme.slice(a + START.length, b);
+  const i = inner.indexOf(s);
+  const j = inner.indexOf(e);
+  const rest = inner.trim();
+  const next = i >= 0 && j > i
+    ? inner.slice(0, i) + block + inner.slice(j + e.length)
+    : "\n\n" + block + (rest ? "\n\n" + rest : "") + "\n\n";
+  return readme.slice(0, a + START.length) + next + readme.slice(b);
 }
