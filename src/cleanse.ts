@@ -452,6 +452,19 @@ function resolve(
       : undefined;
   const base = options[0];
   const okuri = OKURI_CATEGORIES.has(pos.category);
+  // NDL 側 OCR の表記で字を削った候補（睡眠 → 睡）は、元の表記のままでも辞書か対応付けで
+  // 通るなら使わない。L は JMdict より先に引くので、削った表記が L にあると、元の表記が
+  // JMdict にあっても削ったほうが採られてしまう。二つの表記を並べた見出し（言譯言別）は
+  // 元の表記のままでは通らないので、これまでどおり削る
+  const baseMatches = (o: Option) =>
+    [base.notation, o.notation].every((n) => n !== undefined) &&
+    (matchL(o.reading, base.notation, pos, kango, ctx) ??
+        matchJM(o.reading, base.notation, pos, kango, ctx) ??
+        matchAlign(o.reading, base.notation, pos, kango, ctx)) !== undefined;
+  options = options.filter((o) =>
+    !(o.reason === "NDL 側 OCR の表記" && [...o.notation].length < [...base.notation].length &&
+      baseMatches(o))
+  );
   // 動詞・形容詞は JMdict の送り仮名から見出しを作れるので、JMdict を先に引く
   if (okuri) {
     for (const o of options) {
@@ -625,6 +638,9 @@ function resolveVoicing(e: CleanEntry, sources: (string | undefined)[], ctx: Con
  *   （わか-ばえ 若生、紙面は わか-はえ）ので、採用しない
  * - 半濁点: バ行とパ行を入れ替えても対応付けられる読みは、半濁点の丸と濁点を OCR だけで
  *   読み分けていることになる。二系統とも半濁点を濁点と読むことがある（こん-ばく 魂魄、紙面は こん-ぱく）
+ * - ぢ・づ: 現代仮名遣いで ぢ・づ を残すのは連濁（ち→ぢ、つ→づ）と同音の連呼だけで、字音がもともと
+ *   じ・ず の字（陣、軸、地獄）は じ・ず と書く。対応付けではどちらか決められない
+ *   （しぶ-の-ぢん 四武陣 → しぶのじん）ので、SKK の見出しに ぢ・づ が残る候補は採用しない
  *
  * 満たさない候補は未検証にする
  */
@@ -665,6 +681,8 @@ function requireAgreement(
     ? "align-rendaku"
     : bpAmbiguous
     ? "align-handakuten"
+    : /[ぢづ]/.test(e.skkKey ?? "")
+    ? "align-dzi"
     : undefined;
   if (reason) {
     e.status = "unverified";

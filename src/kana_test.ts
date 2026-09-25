@@ -62,3 +62,10 @@ Deno.test("okuriChars: SKK の送りの文字", () => {
   assertEquals(okuriChars("う"), ["u", "w"]);
   assertEquals(okuriChars("しい"), ["s"]);
 });
+
+Deno.test("modernVariants: 語の途中の い は拗音にしない（たいやう 太陽 → たいよう）", () => {
+  assertEquals(modernVariants("たいやう-ねん", { kango: true })[0], "たいようねん");
+  assertEquals(modernVariants("へいたいやう", { kango: true })[0], "へいたいよう");
+  // 語構成要素の頭の いやう は よう
+  assertEquals(modernVariants("いやう", { kango: true })[0], "よう");
+});
