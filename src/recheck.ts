@@ -1,7 +1,7 @@
 import { decode, Image } from "@matmen/imagescript";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
-import { paths } from "./config.ts";
+import { paths, REPO_ROOT } from "./config.ts";
 import type { CleanEntry, CleanVolume } from "./cleanse.ts";
 import { parseHead } from "./extract.ts";
 import { imageFileName } from "./ndl.ts";
@@ -15,8 +15,13 @@ import { type NdlocrLiteConfig, parseNdlocrXml, runOcr } from "./ndlocr_lite.ts"
  * NDL 側 OCR に次ぐ三つ目の読みとしてクレンジングで使う。
  */
 
-import { type RecheckMode, recheckPaths } from "./recheck_paths.ts";
-export { type RecheckMode, recheckPaths };
+import {
+  RECHECK_VARIANTS,
+  type RecheckMode,
+  recheckPaths,
+  type RecheckVariant,
+} from "./recheck_paths.ts";
+export { RECHECK_VARIANTS, type RecheckMode, recheckPaths, type RecheckVariant };
 
 export type RecheckResult = {
   /** 切り出した列を読み順につないだテキスト */
@@ -153,4 +158,72 @@ export function targets(volume: CleanVolume, mode: RecheckMode = "head"): CleanE
       e.reason === "align-single-notation" || e.reason === "align-single-reading" ||
       e.reason === "align-rendaku" || e.reason === "align-handakuten"
     );
+}
+
+/** 多数決の対象。Unihan での対応付けに頼る候補で、読みに濁音・半濁音を含み、読み直し（head）があるもの */
+export function variantTargets(
+  volume: CleanVolume,
+  head: Record<string, RecheckResult>,
+): CleanEntry[] {
+  return volume.entries.filter((e) =>
+    head[e.id] !== undefined &&
+    (e.method === "align" || /^(align-|voicing)/.test(e.reason ?? "")) &&
+    /[がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ]/.test(e.reading)
+  );
+}
+
+/** ndlocr-lite の Python（PIL を含む）。NDLOCR_LITE_PYTHON か、ndlocr-lite のスクリプトの shebang から決める */
+async function ndlocrPython(): Promise<string> {
+  const env = Deno.env.get("NDLOCR_LITE_PYTHON");
+  if (env) return env;
+  const { stdout } = await new Deno.Command("which", { args: ["ndlocr-lite"] }).output();
+  const script = new TextDecoder().decode(stdout).trim();
+  const first = (await Deno.readTextFile(script)).split("\n")[0];
+  if (!first.startsWith("#!")) {
+    throw new Error("ndlocr-lite の Python が分からない（NDLOCR_LITE_PYTHON を設定する）");
+  }
+  return first.slice(2).trim();
+}
+
+/** 変種ごとの切り出しを作る（読み直し済みは飛ばす）。変種ごとの枚数を返す */
+export async function makeVariantCrops(
+  pid: string,
+  entries: CleanEntry[],
+): Promise<Record<RecheckVariant, number>> {
+  const counts = Object.fromEntries(RECHECK_VARIANTS.map((v) => [v, 0])) as Record<
+    RecheckVariant,
+    number
+  >;
+  const jobs: string[] = [];
+  for (const [frame, list] of Map.groupBy(entries, (e) => e.frame)) {
+    const out: Record<string, string> = {};
+    const items = [];
+    for (const e of list) {
+      let needed = false;
+      for (const v of RECHECK_VARIANTS) {
+        if (await exists(join(recheckPaths.raw(pid, v), `${e.id}.xml`))) continue;
+        out[v] = recheckPaths.input(pid, v);
+        needed = true;
+        counts[v]++;
+      }
+      if (needed) items.push({ id: e.id, bbox: e.bbox });
+    }
+    if (items.length === 0) continue;
+    jobs.push(JSON.stringify({
+      page: join(paths.imagesDir(pid), imageFileName(frame)),
+      items,
+      out,
+    }));
+  }
+  if (jobs.length === 0) return counts;
+  const child = new Deno.Command(await ndlocrPython(), {
+    args: [join(REPO_ROOT, "scripts", "recheck_variants.py")],
+    stdin: "piped",
+  }).spawn();
+  const w = child.stdin.getWriter();
+  await w.write(new TextEncoder().encode(jobs.join("\n") + "\n"));
+  await w.close();
+  const status = await child.status;
+  if (!status.success) throw new Error("recheck_variants.py が失敗した");
+  return counts;
 }
