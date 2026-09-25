@@ -100,39 +100,39 @@ SKK の見出し（現代仮名遣いの読み）と表記の両方が紙面の�
 
 <!-- accuracy:start -->
 
-<!-- accuracy:v1.1.1:start -->
+<!-- accuracy:v1.0.2:start -->
 
-### v1.1.1
+### v1.0.2
 
-![辞書ごとの正解率と 95% 信頼区間（v1.1.1）](docs/accuracy/v1.1.1.svg)
+![辞書ごとの正解率と 95% 信頼区間（v1.0.2）](docs/accuracy/v1.0.2.svg)
 
-| 辞書（v1.1.1）                      | 正しい / 抜き取り | 正解率 | 95% 信頼区間 |
+| 辞書（v1.0.2）                      | 正しい / 抜き取り | 正解率 | 95% 信頼区間 |
 | ----------------------------------- | ----------------: | -----: | -----------: |
 | `SKK-JISYO.dainihonkokugojiten.noL` |       1993 / 2000 |  99.7% | 99.3%〜99.8% |
 
-- 抜き取りの条件: 各辞書から 2000 件（シード値 3561625952）（[docs/accuracy/v1.1.1/sample.json](docs/accuracy/v1.1.1/sample.json)）
-- シード値の事前記録: 確認済み（シード値の記録 8784c3e 2026-09-25 → 判定の記録 e0e8404 2026-09-25）
-- 人の確認: 必要だが未実施（理由: v1.1.0 から規則が変わった（src/cleanse.ts、src/kana.ts））
-- 注意: L 除外辞書だけを評価した（検証済み・未検証の辞書は測っていない）。規則は v1.0.0・v1.1.0 の判定と開発用の抜き取り（計 600 件）の誤りを見て直したが、この標本はそれらと別のシード値で、規則を固めてコミットした後に抜き取った。判定に迷った 1 件（京國）は誤りとして数えた
+- 抜き取りの条件: 各辞書から 2000 件（シード値 3561625952）（[docs/accuracy/v1.0.2/sample.json](docs/accuracy/v1.0.2/sample.json)）
+- シード値の事前記録: 未確認（シード値を記録した sample.json がまだコミットされていない）
+- 人の確認: 必要だが未実施（理由: v1.0.2-rc1 から規則が変わった（src/cleanse.ts、src/kana.ts））
+- 注意: L 除外辞書だけを評価した（検証済み・未検証の辞書は測っていない）。規則は v1.0.0・v1.0.2-rc1 の判定と開発用の抜き取り（計 600 件）の誤りを見て直したが、この標本はそれらと別のシード値で、規則を固めてコミットした後に抜き取った。判定に迷った 1 件（京國）は誤りとして数えた
 
-<!-- accuracy:v1.1.1:end -->
+<!-- accuracy:v1.0.2:end -->
 
-<!-- accuracy:v1.1.0:start -->
+<!-- accuracy:v1.0.2-rc1:start -->
 
-### v1.1.0
+### v1.0.2-rc1
 
-![辞書ごとの正解率と 95% 信頼区間（v1.1.0）](docs/accuracy/v1.1.0.svg)
+![辞書ごとの正解率と 95% 信頼区間（v1.0.2-rc1）](docs/accuracy/v1.0.2-rc1.svg)
 
-| 辞書（v1.1.0）                      | 正しい / 抜き取り | 正解率 | 95% 信頼区間 |
+| 辞書（v1.0.2-rc1）                  | 正しい / 抜き取り | 正解率 | 95% 信頼区間 |
 | ----------------------------------- | ----------------: | -----: | -----------: |
 | `SKK-JISYO.dainihonkokugojiten.noL` |       1192 / 1200 |  99.3% | 98.7%〜99.7% |
 
-- 抜き取りの条件: 各辞書から 1200 件（シード値 1696687518）（[docs/accuracy/v1.1.0/sample.json](docs/accuracy/v1.1.0/sample.json)）
-- シード値の事前記録: 確認済み（シード値の記録 c088352 2026-09-25 → 判定の記録 36ebfd2 2026-09-25）
+- 抜き取りの条件: 各辞書から 1200 件（シード値 1696687518）（[docs/accuracy/v1.0.2-rc1/sample.json](docs/accuracy/v1.0.2-rc1/sample.json)）
+- シード値の事前記録: 未確認（シード値を記録した sample.json がまだコミットされていない）
 - 人の確認: 必要だが未実施（理由: v1.0.0 から規則が変わった（src/align.ts、src/build.ts、src/cleanse.ts））
-- 注意: L 除外辞書だけを評価した（検証済み・未検証の辞書は測っていない）。目標（信頼区間の下限 99%）に届かなかったが、この結果は捨てずに記録する
+- 注意: L 除外辞書だけを評価した（検証済み・未検証の辞書は測っていない）。v1.0.2 の途中の評価で、リリースしていない。目標（信頼区間の下限 99%）に届かなかったが、この結果は捨てずに記録する
 
-<!-- accuracy:v1.1.0:end -->
+<!-- accuracy:v1.0.2-rc1:end -->
 
 <!-- accuracy:v1.0.0:start -->
 
@@ -180,11 +180,11 @@ deno task accuracy report --label v1.0.0 --human-check "AI の x 全件と o 50 
   `report` は、`sample.json` を最初に含むコミットが判定（o / x）を最初に含むコミットより前（祖先）にあるかを git の履歴で確かめ、結果を図と上の表の下に出す。
 
 ```sh
-deno task accuracy sample --label v1.1.0
-git add docs/accuracy/v1.1.0/sample.json && git commit -m "v1.1.0 の正解率の抜き取り条件を記録する"   # 判定の前に、抜き取りの条件だけをコミットする
+deno task accuracy sample --label v1.0.3
+git add docs/accuracy/v1.0.3/sample.json && git commit -m "v1.0.3 の正解率の抜き取り条件を記録する"   # 判定の前に、抜き取りの条件だけをコミットする
 # 判定を記入する
-deno task accuracy report --label v1.1.0
-git add docs/accuracy README.md && git commit -m "v1.1.0 の正解率を記録する"
+deno task accuracy report --label v1.0.3
+git add docs/accuracy README.md && git commit -m "v1.0.3 の正解率を記録する"
 ```
 
 ### 人の確認

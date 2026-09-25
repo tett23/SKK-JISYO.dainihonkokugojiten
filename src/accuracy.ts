@@ -371,7 +371,7 @@ export type Preregistration = {
   summary: string;
 };
 
-type Commit = { full: string; hash: string; date: string };
+type Commit = { full: string; hash: string; date: string; path: string };
 
 async function runGit(repoRoot: string, ...args: string[]) {
   const out = await new Deno.Command("git", { args, cwd: repoRoot }).output()
@@ -394,18 +394,33 @@ export async function checkPreregistration(
   note?: string,
 ): Promise<Preregistration> {
   const rel = (p: string) => p.slice(repoRoot.length).replace(/^\//, "");
-  const commits = async (path: string): Promise<Commit[]> =>
-    (await runGit(repoRoot, "log", "--reverse", "--format=%H %h %cs", "--", rel(path))).text
-      .split("\n").filter(Boolean).map((l) => {
-        const [full, hash, date] = l.split(" ");
-        return { full, hash, date };
-      });
+  // ラベルの付け替え（ディレクトリ名の変更）をまたいで履歴をたどる。各コミットでのパスも返す
+  const commits = async (path: string): Promise<Commit[]> => {
+    const { text } = await runGit(
+      repoRoot,
+      "log",
+      "--reverse",
+      "--follow",
+      "--name-only",
+      "--format=@%H %h %cs",
+      "--",
+      rel(path),
+    );
+    const out: Commit[] = [];
+    for (const l of text.split("\n").filter(Boolean)) {
+      if (l.startsWith("@")) {
+        const [full, hash, date] = l.slice(1).split(" ");
+        out.push({ full, hash, date, path: rel(path) });
+      } else if (out.length > 0) out[out.length - 1].path = l;
+    }
+    return out;
+  };
   const seedCommit = (await commits(accuracyPaths.meta(docsDir, label)))[0];
   let judgedCommit: Commit | undefined;
   for (const name of DICTIONARIES) {
     const path = accuracyPaths.tsv(docsDir, label, name);
     for (const c of await commits(path)) {
-      const { text } = await runGit(repoRoot, "show", `${c.full}:${rel(path)}`);
+      const { text } = await runGit(repoRoot, "show", `${c.full}:${c.path}`);
       if (parseTsv(text).some((r) => r.judgment === "o" || r.judgment === "x")) {
         const earlier = !judgedCommit ||
           (await runGit(repoRoot, "merge-base", "--is-ancestor", c.full, judgedCommit.full)).ok;
