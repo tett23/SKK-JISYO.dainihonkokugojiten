@@ -66,9 +66,17 @@ export function learnReadings(
     }
   }
 
+  // L・JMdict は現代仮名遣いなので、語中でハ行転呼した形（葉 わ、原 わら、生 う）が読みとして
+  // 取れてしまう。底本の読みは歴史的仮名遣い（あきのは、おほはら）なので、それを対応付けに足すと
+  // 語中の は を わ と読む見出しを作る。ハ行の読み（は、はら、ふ）がある字では、それに当たる
+  // あ行・わ行の読みを採らない
+  const HAKKO: Record<string, string> = { わ: "は", い: "ひ", う: "ふ", え: "へ", お: "ほ" };
   const out = new Map<string, string[]>();
   for (const [ch, m] of learned) {
-    const rs = [...m].filter(([, ws]) => ws.size >= minWords).map(([k]) => k);
+    const known = unihan.readings.get(ch);
+    const all = new Set([...(known?.on ?? []), ...(known?.kun ?? []), ...m.keys()]);
+    const rs = [...m].filter(([, ws]) => ws.size >= minWords).map(([k]) => k)
+      .filter((k) => !(HAKKO[k[0]] && all.has(HAKKO[k[0]] + k.slice(1))));
     if (rs.length) out.set(ch, rs);
   }
   return out;

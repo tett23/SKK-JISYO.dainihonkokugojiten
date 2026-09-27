@@ -213,7 +213,7 @@ async function cleanseStep(pids: string[]) {
   // Unihan に無い字の読みを L・JMdict から学習して足す
   const learned = learnReadings(L, jm, unihan);
   console.log(`  学習した字の読み: ${[...learned.values()].flat().length}（${learned.size} 字）`);
-  const ctx = buildContext(L, withLearnedReadings(unihan, learned), jm);
+  const ctx = { ...buildContext(L, unihan, jm), learned: withLearnedReadings(unihan, learned) };
   for (const pid of pids) {
     console.log(`[cleanse] ${pid}`);
     const extract: ExtractVolume = JSON.parse(await Deno.readTextFile(paths.extractJson(pid)));
