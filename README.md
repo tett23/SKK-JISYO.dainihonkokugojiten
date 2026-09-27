@@ -39,6 +39,10 @@ NDLデジタルコレクションでインターネット公開されている�
 - [Unihan Database](https://www.unicode.org/charts/unihan.html)（Unicode, Inc., [Unicode License v3](LICENSES/Unicode-3.0.txt)）
 - [tshet-uinh](https://github.com/nk2028/tshet-uinh-js)（Project NK2028, [MIT](LICENSES/MIT-tshet-uinh.txt)）と、同梱の『廣韻』のデータ [tshet-uinh-data](https://github.com/nk2028/tshet-uinh-data)（CC0 1.0）。漢語の読みを字音で確かめるのに使う
 
+次のデータは、読みの検証に使えるかを試すために使った（辞書の作成には使っておらず、辞書にこれに由来する内容は含まれない。試行の結果は [docs/cleansing.md](docs/cleansing.md#日葡辞書との照合採用しない) を参照）。
+
+- 大島英之 作成、相田太一 協力「日葡辞書見出し語データ Ver.202510」国立国語研究所, 2025（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.ja)）<https://www2.ninjal.ac.jp/textdb_dataset/nipp/>。見出し語の片仮名転写を、歴史的仮名遣いの読みから作った当時の発音の形と照合した
+
 ## 権利関係
 
 - 底本の著者は上田万年（1937年没）と松井簡治（1945年没）。共同著作物の保護期間は最後に亡くなった著作者の死後50年なので、1995年末に満了している。2018年の70年への延長は、その時点で権利が残っていた著作物にしか適用されない（TPP整備法附則7条）。戦時加算は連合国民の著作物だけが対象なので関係しない。

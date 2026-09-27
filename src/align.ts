@@ -20,9 +20,12 @@ const toHira = (s: string) =>
 const U_ROW = "うくぐすずつづぬふぶぷむゆる";
 const I_ROW = "いきぎしじちぢにひびぴみ　り";
 
-const cache = new Map<string, string[]>();
+// 読みの表ごとに持つ（学習した読みを足した表と元の表を混ぜない）
+const caches = new WeakMap<Unihan["readings"], Map<string, string[]>>();
 
 function readingsFor(ch: string, unihan: Unihan, kunOnly = false): string[] {
+  let cache = caches.get(unihan.readings);
+  if (!cache) caches.set(unihan.readings, cache = new Map());
   const hit = cache.get(ch + (kunOnly ? ":kun" : ""));
   if (hit) return hit;
   const r = unihan.readings.get(ch);

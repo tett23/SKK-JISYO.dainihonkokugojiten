@@ -24,6 +24,7 @@ import { compareBuilds } from "./compare.ts";
 import type { RecheckVolume } from "./recheck.ts";
 import { RECHECK_VARIANTS, recheckPaths, voteRecheck } from "./recheck_paths.ts";
 import { fetchResources, loadSkkL, loadUnihan, resourcePaths } from "./resources.ts";
+import { learnReadings, withLearnedReadings } from "./learned_readings.ts";
 import { loadJmdict } from "./jmdict.ts";
 import {
   extractNdlVolume,
@@ -209,7 +210,10 @@ async function cleanseStep(pids: string[]) {
     loadUnihan(),
     Deno.env.get("NO_JMDICT") ? undefined : loadJmdict(resourcePaths.jmdict),
   ]);
-  const ctx = buildContext(L, unihan, jm);
+  // Unihan に無い字の読みを L・JMdict から学習して足す
+  const learned = learnReadings(L, jm, unihan);
+  console.log(`  学習した字の読み: ${[...learned.values()].flat().length}（${learned.size} 字）`);
+  const ctx = { ...buildContext(L, unihan, jm), learned: withLearnedReadings(unihan, learned) };
   for (const pid of pids) {
     console.log(`[cleanse] ${pid}`);
     const extract: ExtractVolume = JSON.parse(await Deno.readTextFile(paths.extractJson(pid)));

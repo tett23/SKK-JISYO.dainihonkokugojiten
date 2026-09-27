@@ -1,4 +1,4 @@
-import { alignReading } from "./align.ts";
+import { alignReading, segmentReading } from "./align.ts";
 import { kanonSegment } from "./kanon.ts";
 import { buildReadingStats, type ReadingStats, voicingAnomalies } from "./reading_stats.ts";
 import type { BBox, Candidate, ExtractVolume } from "./extract.ts";
@@ -98,6 +98,8 @@ export type Context = {
   jm?: Jmdict;
   /** 字ごとの読みの頭の清濁の統計（L・JMdict から作る） */
   readingStats: ReadingStats;
+  /** L・JMdict から学習した字の読みを足した Unihan（learned_readings.ts）。対応付けの予備に使う */
+  learned?: Unihan;
 };
 
 const HAN_RE = /[\p{Script=Han}々〆ヶ〻]/u;
@@ -387,6 +389,17 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
         found.set(stem + oc, { modern: v, skkKey: stem + oc, okuri: true as const });
       }
     }
+    if (found.size === 0) {
+      for (const v of modernVariants(reading, { kango })) {
+        const stem = v.slice(0, -1);
+        const oc = okuriChars(v.slice(-1))[0];
+        if (!stem || !oc || !/[うくぐすずつづぬふぶむゆる]$/.test(v)) continue;
+        const plainStem = [...reading.replaceAll(/[-・]/g, "")].slice(0, -1).join("");
+        if (notationForms(notation, ctx).some((n) => alignLearned(n, stem, plainStem, 0, ctx))) {
+          found.set(stem + oc, { modern: v, skkKey: stem + oc, okuri: true as const });
+        }
+      }
+    }
     return found.size === 1 ? [...found.values()][0] : undefined;
   }
   for (const v of modernVariants(reading, { kango })) {
@@ -400,7 +413,56 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
       return { modern: v, skkKey: v, okuri: false };
     }
   }
+  const plainReading = reading.replaceAll(/[-・]/g, "");
+  const maxTrailing = [...notation].length === 1 ? 1 : 0;
+  for (const v of modernVariants(reading, { kango })) {
+    if (
+      notationForms(notation, ctx).some((n) => alignLearned(n, v, plainReading, maxTrailing, ctx))
+    ) {
+      return { modern: v, skkKey: v, okuri: false };
+    }
+  }
   return undefined;
+}
+
+/**
+ * 学習した字の読み（現代仮名遣い）で対応付ける。学習した読みは L・JMdict の現代仮名遣いから
+ * 取るので、語中でハ行転呼した形（葉 わ、原 わら、生 お）が混じる。底本の読み（歴史的仮名遣い）を
+ * 現代仮名遣いに直して書き換わった位置（すぎはら → すぎわら の わ）を、学習した読みでしか
+ * 対応付けられない字が受け持つなら採らない（杉原 を すぎわら、朝請大夫 を ちょうせいたゆう と
+ * した誤りを防ぐ）。書き換えで長さが変わった読みは位置を比べられないので、学習した読みに
+ * 頼る字があれば採らない
+ */
+function alignLearned(
+  notation: string,
+  modern: string,
+  historical: string,
+  maxTrailing: number,
+  ctx: Context,
+): boolean {
+  if (!ctx.learned) return false;
+  const segs = segmentReading(notation, modern, ctx.learned, { maxTrailing });
+  if (!segs) return false;
+  const h = [...historical], m = [...modern];
+  let pos = 0;
+  for (const seg of segs) {
+    const len = [...seg.kana].length;
+    // 元の Unihan で読めるか（連濁・促音化した形は元の形に戻して調べる）
+    const bases = [seg.kana];
+    const plain = seg.kana.normalize("NFD").replace(/^(.)[\u3099\u309A]/, "$1").normalize("NFC");
+    bases.push(plain);
+    for (const b of [...bases]) {
+      if (b.endsWith("っ")) { for (const c of "つくちき") bases.push(b.slice(0, -1) + c); }
+    }
+    const dependsOnLearned = /\p{Script=Han}/u.test(seg.char) &&
+      !bases.some((b) => segmentReading(seg.char, b, ctx.unihan, { maxTrailing: 0 }));
+    if (dependsOnLearned) {
+      if (h.length !== m.length) return false;
+      for (let i = pos; i < pos + len; i++) if (h[i] !== m[i]) return false;
+    }
+    pos += len;
+  }
+  return true;
 }
 
 /**
@@ -836,10 +898,12 @@ function requireAgreement(
     modernVariants(reading, { kango: e.kango }).some((v) =>
       notationForms(e.notation!, ctx).some((n) =>
         // 動詞は送り仮名（最後の 1 文字）を除いた語幹を対応付ける
-        alignReading(n, e.okuri ? v.slice(0, -1) : v, ctx.unihan, {
-          maxTrailing: e.okuri ? 0 : maxTrailing,
-          rendaku,
-        })
+        [ctx.unihan, ...(ctx.learned ? [ctx.learned] : [])].some((u) =>
+          alignReading(n, e.okuri ? v.slice(0, -1) : v, u, {
+            maxTrailing: e.okuri ? 0 : maxTrailing,
+            rendaku,
+          })
+        )
       )
     );
   // 全濁の声母の字（頭 とう・どう）は字音でも清濁の両方があり得るので、字音では連濁の検査を緩めない
