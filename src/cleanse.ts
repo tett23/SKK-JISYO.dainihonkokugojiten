@@ -842,9 +842,9 @@ function requireAgreement(
         })
       )
     );
-  // 漢語は、字音そのものが濁る字（呉音の 奉行 ぶぎやう）の濁音を連濁と数えない
-  const withoutRendaku = aligns(e.reading, false) ||
-    (e.kango && !!matchKanon(e.reading, e.notation!, ctx, "none"));
+  // 全濁の声母の字（頭 とう・どう）は字音でも清濁の両方があり得るので、字音では連濁の検査を緩めない
+  // （座頭 ざ-とう を同じエンジンの二系統が ざ-どう と誤読した）
+  const withoutRendaku = aligns(e.reading, false);
   const chars = [...e.reading];
   const bpAmbiguous = chars.some((c, i) => {
     const b = "ばびぶべぼ".indexOf(c);
@@ -864,14 +864,11 @@ function requireAgreement(
   const readingByKanon = e.kango && otherReadings.length > 0 &&
     !!matchKanon(e.reading, e.notation!, ctx, "none") &&
     otherReadings.every((r) => refutedByKanon(r, e.notation, ctx));
-  // 表記: 異体字の違い（銳・鋭）は食い違いとしない。漢語で、表記が読みの字音に合い、ほかの系統の
-  // 表記のうち同じ字数のものがどれも読みに合わない（閻羅 / 閣羅、烏臼木 / 鳥臼木）なら、
-  // 別の表記は誤読と言えるので、一致が 1 系統でもその表記に決まる
+  // 表記: 異体字の違い（銳・鋭）は食い違いとしない。1 系統だけが読んだ表記は、ほかの系統の表記が
+  // 字音に合わなくても採らない。同じ音符を持つ字形の近い字（膁 を 慊、耇 を 考）は字音では
+  // 見分けられないため（抜き取りの誤り 7 件のうち 4 件がこの形だった）
   const same = (n: string | undefined) => n !== undefined && sameNotation(n, e.notation!, ctx);
-  const others = notations.filter((n): n is string => n !== undefined && !same(n));
   const refuted = (n: string) => refutedByKanon(e.reading, n, ctx);
-  const notationByKanon = e.kango && !!matchKanon(e.reading, e.notation!, ctx) &&
-    others.some((n) => [...n].length === [...e.notation!].length) && others.every(refuted);
   // 読みのある系統すべてが、濁音・半濁音の字を同じに読んだなら（ほかの字の食い違いは問わない）、
   // 連濁・半濁点の読み分けは OCR の誤読ではないとみなす
   const VOICED = /[がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ]/;
@@ -889,8 +886,7 @@ function requireAgreement(
         // 読んでいるときは数に入れない（嘉耦 を 嘉隅 と二度読んだ）。NDL 側 OCR の表記が漢語の
         // 読みに合わない誤読なら数に入れる
         !(same(notations[3]) &&
-          (notationB === undefined || same(notationB) || (e.kango && refuted(notationB)))) &&
-        !notationByKanon
+          (notationB === undefined || same(notationB) || (e.kango && refuted(notationB))))
     ? "align-single-notation"
     : !withoutRendaku && !unanimous
     ? "align-rendaku"

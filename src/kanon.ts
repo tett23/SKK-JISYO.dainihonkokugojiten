@@ -304,6 +304,19 @@ export function kanonReadings(ch: string, unihan: Unihan): string[] {
   return list;
 }
 
+const modernCache = new Map<string, string[]>();
+
+/** 字音を現代仮名遣いに直したもの（がう → ごう、くわう → こう） */
+function kanonModern(ch: string, unihan: Unihan): string[] {
+  const hit = modernCache.get(ch);
+  if (hit) return hit;
+  const list = [
+    ...new Set(kanonReadings(ch, unihan).flatMap((r) => modernVariants(r, { kango: true }))),
+  ];
+  modernCache.set(ch, list);
+  return list;
+}
+
 export type KanonOptions = {
   /** Unihan の音読み（現代仮名遣い）に合う読みも字音として認める（慣用音を補う） */
   unihanOn?: boolean;
@@ -328,12 +341,14 @@ export function kanonSegment(
   if (chars.some((c) => !/[\p{sc=Han}々]/u.test(c))) return undefined;
   const original = reading.replaceAll(/[-ー・]/g, "");
   const r = kanonKana(original);
-  const fits = (ch: string, kana: string) =>
-    kanonReadings(ch, unihan).includes(kana) ||
-    (unihanOn &&
-      modernVariants(kana, { kango: true }).some((v) =>
-        (unihan.readings.get(ch)?.on ?? []).includes(v)
-      ));
+  // 底本の字音仮名遣いは規範どおりとは限らない（降魔 を がうま でなく ごうま と書く）ので、
+  // 字音とは現代仮名遣いに直して比べる
+  const fits = (ch: string, kana: string) => {
+    if (kanonReadings(ch, unihan).includes(kana)) return true;
+    const modern = modernVariants(kana, { kango: true });
+    return modern.some((v) => kanonModern(ch, unihan).includes(v)) ||
+      (unihanOn && modern.some((v) => (unihan.readings.get(ch)?.on ?? []).includes(v)));
+  };
   /** 元の字音に戻す候補: 促音化（末尾の っ → つ・く・ち・き・ふ）と連濁（語頭の濁音・半濁音 → 清音） */
   const baseForms = (kana: string, i: number, afterNasal: boolean): string[] => {
     const bases = new Set([kana]);
