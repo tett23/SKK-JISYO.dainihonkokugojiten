@@ -96,7 +96,22 @@ export type Unihan = {
   newVariant: Map<string, string>;
   /** 漢字 → 読み（kJapanese。音読みはひらがなに直す） */
   readings: Map<string, { on: string[]; kun: string[] }>;
+  /** 漢字 → 同じ字の異体字（字形の異体、繁体・簡体、旧字体・新字体。両方向） */
+  variants: Map<string, Set<string>>;
+  /** 漢字 → 意味の上の異体字（協・叶 など、別の字のこともある。両方向） */
+  semanticVariants: Map<string, Set<string>>;
 };
+
+/** 同じ字の異体字として扱う Unihan の項目（kSpoofingVariant は字形が紛らわしいだけなので含めない） */
+const VARIANT_FIELDS = new Set([
+  "kZVariant",
+  "kTraditionalVariant",
+  "kSimplifiedVariant",
+  "kCompatibilityVariant",
+  "kJapaneseNewVariant",
+  "kJapaneseOldVariant",
+]);
+const SEMANTIC_VARIANT_FIELDS = new Set(["kSemanticVariant", "kSpecializedSemanticVariant"]);
 
 const fromCodePoint = (u: string) => String.fromCodePoint(parseInt(u.slice(2), 16));
 const kataToHira = (s: string) =>
@@ -110,10 +125,33 @@ async function unzipText(zip: string, member: string): Promise<string> {
 }
 
 export function parseUnihan(text: string): Unihan {
-  const unihan: Unihan = { newVariant: new Map(), readings: new Map() };
+  const unihan: Unihan = {
+    newVariant: new Map(),
+    readings: new Map(),
+    variants: new Map(),
+    semanticVariants: new Map(),
+  };
+  const link = (map: Map<string, Set<string>>, a: string, b: string) => {
+    if (a === b) return;
+    for (const [x, y] of [[a, b], [b, a]]) {
+      const set = map.get(x) ?? new Set<string>();
+      set.add(y);
+      map.set(x, set);
+    }
+  };
   for (const line of text.split("\n")) {
     if (!line.startsWith("U+")) continue;
     const [cp, field, value] = line.split("\t");
+    const map = VARIANT_FIELDS.has(field)
+      ? unihan.variants
+      : SEMANTIC_VARIANT_FIELDS.has(field)
+      ? unihan.semanticVariants
+      : undefined;
+    if (map) {
+      for (const v of value.split(/\s+/)) {
+        if (v.startsWith("U+")) link(map, fromCodePoint(cp), fromCodePoint(v.split("<")[0]));
+      }
+    }
     if (field === "kJapaneseNewVariant") {
       unihan.newVariant.set(fromCodePoint(cp), fromCodePoint(value.split(/\s/)[0]));
     } else if (field === "kJapanese") {

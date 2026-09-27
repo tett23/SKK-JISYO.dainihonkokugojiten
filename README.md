@@ -37,6 +37,7 @@ NDLデジタルコレクションでインターネット公開されている�
 - [JMdict](https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project)（Electronic Dictionary Research and Development Group, [CC BY-SA 4.0](https://www.edrdg.org/edrdg/licence.html)）。
   This publication has included material from the JMdict (EDICT, etc.) dictionary files in accordance with the licence provisions of the Electronic Dictionaries Research Group.
 - [Unihan Database](https://www.unicode.org/charts/unihan.html)（Unicode, Inc., [Unicode License v3](LICENSES/Unicode-3.0.txt)）
+- [tshet-uinh](https://github.com/nk2028/tshet-uinh-js)（Project NK2028, [MIT](LICENSES/MIT-tshet-uinh.txt)）と、同梱の『廣韻』のデータ [tshet-uinh-data](https://github.com/nk2028/tshet-uinh-data)（CC0 1.0）。漢語の読みを字音で確かめるのに使う
 
 ## 権利関係
 
@@ -374,13 +375,13 @@ data/
 
 辞書は UTF-8 版（`utf-8/`）と EUC-JP 版（`euc-jp/`）の2つを出す。ファイル名はどちらも同じ。
 
-| ファイル                                                     | 内容                                                                                       |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `utf-8/SKK-JISYO.dainihonkokugojiten`、`euc-jp/…`            | 検証済み（SKK-JISYO.L・JMdict との一致、または Unihan の音訓で読みと表記が対応）のエントリ |
-| `utf-8/SKK-JISYO.dainihonkokugojiten.noL`、`euc-jp/…`        | 上から SKK-JISYO.L にある候補を除いたもの                                                  |
-| `utf-8/SKK-JISYO.dainihonkokugojiten.unverified`、`euc-jp/…` | 検証できなかったエントリ。誤りを多く含む                                                   |
-| `entries.tsv`                                                | 全候補の一覧（状態、検証方法、補正の記録、紙面画像の切り出し URL）                         |
-| `report.md`                                                  | 件数の内訳                                                                                 |
+| ファイル                                                     | 内容                                                                                                   |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `utf-8/SKK-JISYO.dainihonkokugojiten`、`euc-jp/…`            | 検証済み（SKK-JISYO.L・JMdict との一致、または Unihan の音訓・漢語の字音で読みと表記が対応）のエントリ |
+| `utf-8/SKK-JISYO.dainihonkokugojiten.noL`、`euc-jp/…`        | 上から SKK-JISYO.L にある候補を除いたもの                                                              |
+| `utf-8/SKK-JISYO.dainihonkokugojiten.unverified`、`euc-jp/…` | 検証できなかったエントリ。誤りを多く含む                                                               |
+| `entries.tsv`                                                | 全候補の一覧（状態、検証方法、補正の記録、紙面画像の切り出し URL）                                     |
+| `report.md`                                                  | 件数の内訳                                                                                             |
 
 EUC-JP 版は、従来の SKK 辞書（SKK-JISYO.L など）と同じく ASCII と JIS X 0208 の範囲で符号化する。
 JIS X 0208 に無い文字（一部の旧字体など）を含む候補は EUC-JP 版から除く（除いた数は `report.md` に出す）。多くは旧字体の候補で、同じ語の新字体の候補は残る。
