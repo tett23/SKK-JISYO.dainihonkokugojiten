@@ -1,4 +1,5 @@
 import { alignReading } from "./align.ts";
+import { kanonSegment } from "./kanon.ts";
 import { buildReadingStats, type ReadingStats, voicingAnomalies } from "./reading_stats.ts";
 import type { BBox, Candidate, ExtractVolume } from "./extract.ts";
 import type { NdlCandidate } from "./extract_ndl.ts";
@@ -32,6 +33,8 @@ export type Method =
   | "L-notation"
   /** Unihan の音訓で読みと表記が対応した */
   | "align"
+  /** 漢語の読みが、表記の字ごとの字音（『廣韻』の音韻地位から作る漢音・呉音）に区切れた */
+  | "kanon"
   | "none";
 
 export type Fix = {
@@ -400,6 +403,53 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
   return undefined;
 }
 
+/**
+ * 漢語の読みを表記の字ごとの字音に区切れるか。区切れたら字ごとに現代仮名遣いに直して見出しにする
+ * （けふ-かう 協和 → きょうこう のように字の境目で直すので、語全体の変換の曖昧さが残らない）
+ */
+function matchKanon(
+  reading: string,
+  notation: string,
+  ctx: Context,
+  rendaku: "any" | "nasal" | "none" = "any",
+) {
+  for (const n of notationForms(notation, ctx)) {
+    const segs = kanonSegment(n, reading, ctx.unihan, { unihanOn: true, rendaku });
+    if (!segs) continue;
+    const modern = segs.map((s) => modernVariants(s.replaceAll("ゎ", "わ"), { kango: true })[0])
+      .join("");
+    // 合拗音の わ を あ と読んだ箇所（櫻花 あう-くあ）を直した読み。区切り "-" の位置は保つ
+    const fixed = [...segs.join("")];
+    let k = 0;
+    const repaired = [...reading].map((c) => (c === "-" ? c : fixed[k++])).join("");
+    return {
+      modern,
+      skkKey: modern,
+      okuri: false as const,
+      reading: repaired,
+      reason: repaired !== reading ? "字音仮名遣いに無い くあ を くわ に直す" : undefined,
+    };
+  }
+  return undefined;
+}
+
+/** 読みが表記の字音にも Unihan の音訓にも合わない（誤読と言える）か */
+function refutedByKanon(reading: string, notation: string | undefined, ctx: Context): boolean {
+  if (!notation || !/^[\p{Script=Han}々]+$/u.test(notation)) return true;
+  if (matchKanon(reading, notation, ctx)) return false;
+  const maxTrailing = [...notation].length === 1 ? 1 : 0;
+  return !modernVariants(reading, { kango: true }).some((v) =>
+    notationForms(notation, ctx).some((n) => alignReading(n, v, ctx.unihan, { maxTrailing }))
+  );
+}
+
+/** 2 つの表記が同じ字の異体（銳・鋭、稅・税、說・説）だけで違うか */
+function sameNotation(a: string, b: string, ctx: Context): boolean {
+  const x = [...toShinjitai(a, ctx.unihan)], y = [...toShinjitai(b, ctx.unihan)];
+  return x.length === y.length &&
+    x.every((c, i) => c === y[i] || (ctx.unihan.variants.get(c)?.has(y[i]) ?? false));
+}
+
 /** L・JMdict にある同じ表記の読みのうち、編集距離が小さいものが 1 つだけならそれに補正する */
 function fixReadingByDict(
   reading: string,
@@ -528,7 +578,19 @@ function resolve(
     const m = matchAlign(o.reading, o.notation, pos, kango, ctx);
     if (m) return { ...m, method: "align", notation: o.notation, fix: withFix(o, base) };
   }
-  if (!suspicious) return undefined;
+  // 漢語の字音による対応付けは、L・JMdict による修復（全都 せんと → ぜんと）の後に試す
+  const kanon = (): Resolved | undefined => {
+    if (!kango || okuri) return undefined;
+    for (const o of options) {
+      if ((outlier && o === base) || o.noAlign) continue;
+      const m = matchKanon(o.reading, o.notation, ctx);
+      if (!m) continue;
+      const fixed = m.reading !== o.reading ? { ...o, reading: m.reading, reason: m.reason } : o;
+      return { ...m, method: "kanon", notation: o.notation, fix: withFix(fixed, base) };
+    }
+    return undefined;
+  };
+  if (!suspicious) return kanon();
   // NDL 側 OCR（別のエンジン）の読みが元の読みと一致するなら、底本の語形である可能性が高い。
   // この場合、辞書に合わせた書き換えは、両方の OCR に共通する頻繁な字形の取り違え
   // （う/ら/つ、き/さ、あ/の/め、濁点）の修復だけにし、読みの補正はしない
@@ -555,7 +617,7 @@ function resolve(
       };
     }
   }
-  if (confirmedOriginal) return undefined;
+  if (confirmedOriginal) return kanon();
   const r = fixReadingByDict(base.reading, base.notation, pos, kango, ctx);
   if (r) {
     return {
@@ -572,6 +634,8 @@ function resolve(
       },
     };
   }
+  const k = kanon();
+  if (k) return k;
   const n = fixNotationByL(base.reading, base.notation, pos, kango, ctx);
   if (n) {
     return {
@@ -652,7 +716,30 @@ function resolveVoicing(e: CleanEntry, sources: (string | undefined)[], ctx: Con
     e.method = inL ? "L" : "JMdict";
     return;
   }
-  if (!self && (e.method === "align" || e.method === "dict-reading")) {
+  // 漢語は、連濁では説明できない濁点（語頭の 牙音 がおん / かおん、吸熱 きふねつ / ぎふねつ）を
+  // 声母の清濁で読み分ける。連濁なしで字音に区切れる組み合わせがちょうど 1 つならそれに合わせる
+  if (e.kango && (e.method === "align" || e.method === "kanon")) {
+    const fitting = combos.map(withHyphen).filter((r) => matchKanon(r, e.notation!, ctx, "none"));
+    if (fitting.length === 1) {
+      const [reading] = fitting;
+      if (reading !== e.reading) {
+        const m = matchKanon(reading, e.notation!, ctx, "none")!;
+        e.fixes.push({
+          field: "reading",
+          from: e.reading,
+          to: reading,
+          reason: "濁点・半濁点の読み分けを字音（声母の清濁）で判定",
+        });
+        e.reading = reading;
+        e.modern = m.modern;
+        e.skkKey = m.skkKey;
+        e.okuri = m.okuri;
+        e.method = "kanon";
+      }
+      return;
+    }
+  }
+  if (!self && (e.method === "align" || e.method === "dict-reading" || e.method === "kanon")) {
     e.status = "unverified";
     e.reason = "voicing-ambiguous";
   }
@@ -737,8 +824,6 @@ function requireAgreement(
 ) {
   const target = plain(e.reading);
   const readings = [normalizeReading(e.source.reading.replaceAll("ー", "-")), readingB, readingC];
-  const shin = (n: string) => toShinjitai(n, ctx.unihan);
-  const notation = shin(e.notation!);
   const notations = [
     normalizeNotation(e.source.notation).notation,
     notationB,
@@ -757,6 +842,8 @@ function requireAgreement(
         })
       )
     );
+  // 全濁の声母の字（頭 とう・どう）は字音でも清濁の両方があり得るので、字音では連濁の検査を緩めない
+  // （座頭 ざ-とう を同じエンジンの二系統が ざ-どう と誤読した）
   const withoutRendaku = aligns(e.reading, false);
   const chars = [...e.reading];
   const bpAmbiguous = chars.some((c, i) => {
@@ -770,6 +857,18 @@ function requireAgreement(
   const bare = (r: string) => r.replaceAll(/[-ー]/g, "");
   const agreeing = [...readings, readingD].filter((r) => r !== undefined && bare(r) === target)
     .length;
+  // 漢語で、読みが連濁なしで表記の字音に区切れ、ほかの系統の読みがどれも字音にも音訓にも
+  // 合わない（誤読と言える）なら、一致が 1 系統でもその読みに決まる（雲翳 うんえい / らんえい）
+  const otherReadings = [...new Set([...readings, readingD].filter((r): r is string => !!r))]
+    .filter((r) => bare(r) !== target);
+  const readingByKanon = e.kango && otherReadings.length > 0 &&
+    !!matchKanon(e.reading, e.notation!, ctx, "none") &&
+    otherReadings.every((r) => refutedByKanon(r, e.notation, ctx));
+  // 表記: 異体字の違い（銳・鋭）は食い違いとしない。1 系統だけが読んだ表記は、ほかの系統の表記が
+  // 字音に合わなくても採らない。同じ音符を持つ字形の近い字（膁 を 慊、耇 を 考）は字音では
+  // 見分けられないため（抜き取りの誤り 7 件のうち 4 件がこの形だった）
+  const same = (n: string | undefined) => n !== undefined && sameNotation(n, e.notation!, ctx);
+  const refuted = (n: string) => refutedByKanon(e.reading, n, ctx);
   // 読みのある系統すべてが、濁音・半濁音の字を同じに読んだなら（ほかの字の食い違いは問わない）、
   // 連濁・半濁点の読み分けは OCR の誤読ではないとみなす
   const VOICED = /[がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ]/;
@@ -780,13 +879,14 @@ function requireAgreement(
     const c = [...bare(r)];
     return c.length === t.length && t.every((ch, i) => !VOICED.test(ch) || c[i] === ch);
   });
-  const reason = agreeing < 2
+  const reason = agreeing < 2 && !readingByKanon
     ? "align-single-reading"
-    : notations.slice(0, 3).filter((n) => n !== undefined && shin(n) === notation).length < 2 &&
+    : notations.slice(0, 3).filter(same).length < 2 &&
         // 列全体の読み直しは元の OCR と同じエンジンなので、別のエンジン（NDL 側 OCR）が別の表記を
-        // 読んでいるときは数に入れない（嘉耦 を 嘉隅 と二度読んだ）
-        !(notations[3] !== undefined && shin(notations[3]) === notation &&
-          (notationB === undefined || shin(notationB) === notation))
+        // 読んでいるときは数に入れない（嘉耦 を 嘉隅 と二度読んだ）。NDL 側 OCR の表記が漢語の
+        // 読みに合わない誤読なら数に入れる
+        !(same(notations[3]) &&
+          (notationB === undefined || same(notationB) || (e.kango && refuted(notationB))))
     ? "align-single-notation"
     : !withoutRendaku && !unanimous
     ? "align-rendaku"
@@ -1097,7 +1197,7 @@ export function cleanseVolume(
       e.status = "accepted";
       resolveVoicing(e, [e.source.reading.replaceAll("ー", "-"), readingB, readingC], ctx);
       if (e.status === "accepted" && e.method === "align") fixRaToU(e, ctx);
-      if (e.status === "accepted" && e.method === "align") {
+      if (e.status === "accepted" && (e.method === "align" || e.method === "kanon")) {
         requireAgreement(
           e,
           readingB,

@@ -114,9 +114,27 @@ Licence: Unicode License v3 (full text: LICENSES/Unicode-3.0.txt)
 https://www.unicode.org/license.txt
 
 Used to align readings with notations by the Japanese readings of each
-character (kJapanese) and to convert traditional to simplified character forms
-(kJapaneseNewVariant).
-漢字の音訓による読みと表記の照合、旧字体から新字体への変換に使用。
+character (kJapanese), to convert traditional to simplified character forms
+(kJapaneseNewVariant), and to treat variant forms of a character as the same
+character (kZVariant, kTraditionalVariant and others).
+漢字の音訓による読みと表記の照合、旧字体から新字体への変換、異体字の同一視に使用。
+
+--------------------------------------------------------------------------------
+2.4 tshet-uinh (切韻音系) and its Guangyun data
+--------------------------------------------------------------------------------
+
+tshet-uinh: Copyright (c) 2024 Project NK2028
+Licence: MIT License (full text: LICENSES/MIT-tshet-uinh.txt)
+https://github.com/nk2028/tshet-uinh-js
+Data: tshet-uinh-data (廣韻 澤存堂本, with corrections), Project NK2028, CC0 1.0
+https://github.com/nk2028/tshet-uinh-data
+
+Used to look up the Middle Chinese phonological position (initial, rhyme,
+division, rounding and tone) of each character in the Guangyun, from which
+this project derives the historical kana spellings of the Sino-Japanese
+readings (kan-on and go-on) to check the readings of Sino-Japanese words.
+『廣韻』の音韻地位を引き、そこから作る漢音・呉音の字音仮名遣いで漢語の読みを
+確かめるのに使用。
 
 ================================================================================
 3. Software dependencies / 依存ソフトウェア
@@ -126,6 +144,7 @@ The following libraries are fetched at run time and are not included in this
 repository. 以下のライブラリは実行時に取得し、同梱していません。
 
 - Deno standard library (jsr:@std/*), MIT License
+- tshet-uinh (npm:tshet-uinh), MIT License (see 2.4)
 - ImageScript (jsr:@matmen/imagescript), used under the MIT License
   (dual-licensed under AGPL-3.0 and MIT)
   https://github.com/matmen/ImageScript

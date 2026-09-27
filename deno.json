@@ -21,7 +21,14 @@
     "@std/cli": "jsr:@std/cli@^1",
     "@std/encoding": "jsr:@std/encoding@^1",
     "@std/fs": "jsr:@std/fs@^1",
-    "@std/path": "jsr:@std/path@^1"
+    "@std/path": "jsr:@std/path@^1",
+    "tshet-uinh": "npm:tshet-uinh@0.15.4"
   },
-  "fmt": { "lineWidth": 100, "proseWrap": "preserve", "exclude": ["docs/accuracy/"] }
+  "fmt": {
+    "lineWidth": 100,
+    "proseWrap": "preserve",
+    "exclude": [
+      "docs/accuracy/"
+    ]
+  }
 }
