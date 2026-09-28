@@ -1,6 +1,7 @@
 # ndlocr-lite の CoreML 実行プロバイダーの調査（2026年9月28日）
 
 ndlocr-lite は onnxruntime で推論する。onnxruntime には Apple Silicon の GPU・Neural Engine を使う CoreML 実行プロバイダーがあるので、CUDA なしで Mac の OCR を速くできるかを調べた。
+いつの時点で何を試したかは [ocr-coreml-log.md](ocr-coreml-log.md) を参照。
 結論として、**採用しない**。GPU を使うと検出が約 2.8 倍速くなるが OCR の結果が変わり（行の取りこぼしが増える）、結果を変えない設定では全体で数 % しか速くならない。
 
 ## 環境
