@@ -54,6 +54,8 @@ export type SampleMeta = {
   humanCheck?: string;
   /** 結果を読むときの注意（グラフの注記と README に出す） */
   caveat?: string;
+  /** 辞書全体ではなく一部（増えた見出しなど）から抜き取ったときの母集団の説明 */
+  population?: string;
 };
 
 /**
@@ -509,8 +511,9 @@ export async function checkHumanReview(
   label: string,
   meta?: SampleMeta,
 ): Promise<HumanCheck> {
+  // 比べるのは辞書全体からの直前の評価（増えた見出しだけなど、一部の評価は除く）
   const prev = (await otherSampleMetas(docsDir, label))
-    .filter(({ meta: m }) => !meta || m.sampledAt < meta.sampledAt).at(-1);
+    .filter(({ meta: m }) => !m.population && (!meta || m.sampledAt < meta.sampledAt)).at(-1);
   const reasons: string[] = [];
   if (!prev) {
     reasons.push("最初の評価");
