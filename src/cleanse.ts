@@ -921,6 +921,7 @@ function splitNotation(
  *   （しぶ-の-ぢん 四武陣 → しぶのじん）ので、SKK の見出しに ぢ・づ が残る候補は採用しない
  *
  * 連濁・半濁点の条件は、三系統すべてが濁点・半濁点まで同じに読んだ候補には課さない。
+ * 連濁の条件は、別のエンジン（紙面全体と NDL 側 OCR）の読みが濁音の字まで一致する候補にも課さない。
  * 満たさない候補は未検証にする
  */
 function requireAgreement(
@@ -1000,7 +1001,8 @@ function requireAgreement(
   });
   // 別のエンジン（ndlocr-lite の紙面全体と NDL 側 OCR）の読みが、濁音の字まで一致する。
   // 同じエンジンの読み直しの不一致（読み直しの切り出しで濁点が潰れる）は問わない
-  const enginesAgree = Deno.env.get("RELAX_RENDAKU") === "1" && !!readingB &&
+  // （連濁の検査をこれで緩めて新たに検証済みになった 765 件の抜き取りで 100 / 100 が正しかった）
+  const enginesAgree = !!readingB &&
     bare(readings[0]!) === target && bare(readingB) === target;
   const reason = agreeing < 2 && !readingByKanon && !skipReading
     ? "align-single-reading"
