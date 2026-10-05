@@ -432,7 +432,10 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
           alignReading(n, stem, ctx.unihan, { maxTrailing: 0, lastKun })
         )
       ) {
-        found.set(stem + oc, { modern: v, skkKey: stem + oc, okuri: true as const });
+        // 同じ語幹で現代仮名遣いの形（まどう）と古い形（まどふ）の両方が通るときは、先の現代の形を採る
+        if (![...found.values()].some((f) => f.modern.slice(0, -1) === stem)) {
+          found.set(stem + oc, { modern: v, skkKey: stem + oc, okuri: true as const });
+        }
       }
     }
     if (found.size === 0) {
@@ -947,10 +950,14 @@ function requireAgreement(
       notationForms(e.notation!, ctx).some((n) =>
         // 動詞は送り仮名（最後の 1 文字）を除いた語幹を対応付ける
         [ctx.unihan, ...(ctx.learned ? [ctx.learned] : [])].some((u) =>
-          alignReading(n, e.okuri ? v.slice(0, -1) : v, u, {
-            maxTrailing: e.okuri ? 0 : maxTrailing,
-            rendaku,
-          })
+          [false, ...(e.okuri && e.pos.category === "verb" ? [true] : [])].some((lastKun) =>
+            alignReading(n, e.okuri ? v.slice(0, -1) : v, u, {
+              maxTrailing: e.okuri ? 0 : maxTrailing,
+              rendaku,
+              // 動詞の語幹の最後の字は、訓読みの五段動詞の語幹（のく → の）でも見る
+              lastKun,
+            })
+          )
         )
       )
     );
