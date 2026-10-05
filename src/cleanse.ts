@@ -1018,6 +1018,8 @@ function requireAgreement(
       .map((n) => [...toShinjitai(n, ctx.unihan)]);
     // 字数の違う表記を読んだ系統があれば、表記の字が欠けている（篤 / 篤癧）おそれがあるので決めない
     if (others.some((n) => n.length !== t.length)) return false;
+    // 1 字の表記は、ほかの字で系統間の一致を確かめられないので決めない（亞 / 啞）
+    if (t.length < 2) return false;
     // ほかの系統の字に置き換えた表記が、連濁を許して読みに合うか
     const fits = (n: string) =>
       !refutedByKanon(e.reading, n, ctx) ||
