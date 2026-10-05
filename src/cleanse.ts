@@ -529,8 +529,12 @@ function matchKanon(
   for (const n of notationForms(notation, ctx)) {
     const segs = kanonSegment(n, reading, ctx.unihan, { unihanOn: true, rendaku });
     if (!segs) continue;
-    const modern = segs.map((s) => modernVariants(s.replaceAll("ゎ", "わ"), { kango: true })[0])
-      .join("");
+    // 1 字の字音の語末の ふ は、お段の後でも う と読む（法 ほふ → ほう、業 ごふ → ごう）。
+    // 語全体の変換では お段 + ふ が 2 字にまたがる（祖父 そ-ふ）ことがあるので、字ごとの字音でだけ直す
+    const modern = segs.map((s) => {
+      const m = modernVariants(s.replaceAll("ゎ", "わ"), { kango: true })[0];
+      return /^[^ふ]*[おこごそぞとどのほぼぽもよろを]ふ$/.test(s) ? m.replace(/ふ$/, "う") : m;
+    }).join("");
     // 合拗音の わ を あ と読んだ箇所（櫻花 あう-くあ）を直した読み。区切り "-" の位置は保つ
     const fixed = [...segs.join("")];
     let k = 0;
