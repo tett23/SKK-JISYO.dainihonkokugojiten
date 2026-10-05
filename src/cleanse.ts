@@ -1054,7 +1054,8 @@ function requireAgreement(
     ? "align-single-notation"
     : !withoutRendaku && !unanimous && !enginesAgree
     ? "align-rendaku"
-    : bpAmbiguous && !unanimous
+    // 試行: 別のエンジンの読みが濁音・半濁音の字まで一致するなら、半濁点の検査も緩める
+    : bpAmbiguous && !unanimous && !(Deno.env.get("RELAX_HANDAKUTEN") === "1" && enginesAgree)
     ? "align-handakuten"
     : /[ぢづ]/.test(e.skkKey ?? "") && !resolveDzi(e, ctx)
     ? "align-dzi"
