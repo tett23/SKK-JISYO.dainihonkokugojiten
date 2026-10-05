@@ -230,8 +230,17 @@ async function cleanseStep(pids: string[]) {
   }
   const learned = learnReadings(L, jm, unihan);
   console.log(`  学習した字の読み: ${[...learned.values()].flat().length}（${learned.size} 字）`);
+  // 試行: JMnedict（固有名詞）を JMdict と同じように照合に使う（JMNEDICT=<パス>）
+  const nePath = Deno.env.get("JMNEDICT");
+  const ne = nePath ? await loadJmdict(nePath) : undefined;
+  const base = buildContext(L, unihan, jm);
+  if (ne && base.jm) {
+    const merged = new Map(base.jm.bySkeleton);
+    for (const [k, forms] of ne.bySkeleton) merged.set(k, [...(merged.get(k) ?? []), ...forms]);
+    base.jm = { ...base.jm, bySkeleton: merged };
+  }
   const ctx = {
-    ...buildContext(L, unihan, jm),
+    ...base,
     learned: withLearnedReadings(unihan, learned),
     nippo: await loadNippo(),
   };
