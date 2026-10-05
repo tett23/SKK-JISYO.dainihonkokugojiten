@@ -1,0 +1,12 @@
+{
+  "n": 182,
+  "seeds": [],
+  "dicts": [
+    "verified"
+  ],
+  "sampledAt": "2026-10-05T10:40:08.398541Z",
+  "commit": "3487455",
+  "judge": "AI（Claude）が紙面画像と照合",
+  "population": "日葡辞書による読みの修復（3487455）で検証済みになった見出しの全数（method が nippo のもの。scripts/draw_method.ts）",
+  "caveat": "抜き取りではなく全数の判定。辞書全体の正解率ではない"
+}

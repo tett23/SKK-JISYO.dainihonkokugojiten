@@ -136,6 +136,27 @@ readings (kan-on and go-on) to check the readings of Sino-Japanese words.
 『廣韻』の音韻地位を引き、そこから作る漢音・呉音の字音仮名遣いで漢語の読みを
 確かめるのに使用。
 
+--------------------------------------------------------------------------------
+2.5 日葡辞書見出し語データ Ver.202510 (Nippo Jisho headword data)
+--------------------------------------------------------------------------------
+
+大島英之 作成、相田太一 協力「日葡辞書見出し語データ Ver.202510」
+国立国語研究所 (National Institute for Japanese Language and Linguistics), 2025
+https://www2.ninjal.ac.jp/textdb_dataset/nipp/
+Licence: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+
+The katakana transcriptions of the headwords of the Vocabulario da Lingoa de
+Iapam (1603) are compared with readings converted from historical kana
+spelling to the pronunciation of the time, and are used as evidence to
+correct characters that OCR misreads (u/ra, ki/sa, a/no/me). The data itself
+is not redistributed; the dictionary contains readings corrected on its basis.
+This project's conversion and comparison are its own and are not endorsed by
+the authors or NINJAL.
+見出し語の片仮名転写を、歴史的仮名遣いから当時の発音の形に変換した読みと照合し、
+OCR が取り違えた字形を直す根拠に使用。データ自体は同梱しないが、これを根拠に
+直した読みが辞書に含まれる。変換と照合は本プロジェクトによるもの。
+
 ================================================================================
 3. Software dependencies / 依存ソフトウェア
 ================================================================================

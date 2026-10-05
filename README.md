@@ -38,10 +38,7 @@ NDLデジタルコレクションでインターネット公開されている�
   This publication has included material from the JMdict (EDICT, etc.) dictionary files in accordance with the licence provisions of the Electronic Dictionaries Research Group.
 - [Unihan Database](https://www.unicode.org/charts/unihan.html)（Unicode, Inc., [Unicode License v3](LICENSES/Unicode-3.0.txt)）
 - [tshet-uinh](https://github.com/nk2028/tshet-uinh-js)（Project NK2028, [MIT](LICENSES/MIT-tshet-uinh.txt)）と、同梱の『廣韻』のデータ [tshet-uinh-data](https://github.com/nk2028/tshet-uinh-data)（CC0 1.0）。漢語の読みを字音で確かめるのに使う
-
-次のデータは、読みの検証に使えるかを試すために使った（辞書の作成には使っておらず、辞書にこれに由来する内容は含まれない。試行の結果は [docs/cleansing.md](docs/cleansing.md#日葡辞書との照合採用しない) を参照）。
-
-- 大島英之 作成、相田太一 協力「日葡辞書見出し語データ Ver.202510」国立国語研究所, 2025（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.ja)）<https://www2.ninjal.ac.jp/textdb_dataset/nipp/>。見出し語の片仮名転写を、歴史的仮名遣いの読みから作った当時の発音の形と照合した
+- 大島英之 作成、相田太一 協力「日葡辞書見出し語データ Ver.202510」国立国語研究所, 2025（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.ja)）<https://www2.ninjal.ac.jp/textdb_dataset/nipp/>。見出し語の片仮名転写を、歴史的仮名遣いの読みから作った当時の発音の形と照合し、OCR が取り違えた字形（う/ら、き/さ、あ/の/め）を直す根拠に使う（[docs/cleansing.md](docs/cleansing.md#日葡辞書による字形の取り違えの修復nippo2026年10月5日)）。データ自体は辞書に含まないが、これを根拠に直した読みが辞書に含まれる
 
 ## 権利関係
 
@@ -70,7 +67,7 @@ deno task work    # 生データから作業用 JSON を生成
 deno task extract # 作業用 JSON から見出し語・表記の候補を抽出
 deno task all     # 上記を順に実行
 
-deno task resources # クレンジングに使う SKK-JISYO.L・Unihan・JMdict を取得
+deno task resources # クレンジングに使う SKK-JISYO.L・Unihan・JMdict・日葡辞書見出し語データを取得
 deno task recheck   # NDL 側 OCR と読みが食い違う見出しを切り出して読み直す（画像が必要、数時間）
 deno task cleanse   # 候補を照合・補正して data/cleanse/<pid>.json に保存
 deno task build     # SKK 辞書とレポートを dist/ に出力（DIST_DIR で出力先を変えられる）
@@ -104,6 +101,23 @@ SKK の見出し（現代仮名遣いの読み）と表記の両方が紙面の�
 区間は正解率の 95% 信頼区間（Wilson スコア区間）。判定の一覧は [docs/accuracy/](docs/accuracy/) にある。
 
 <!-- accuracy:start -->
+
+<!-- accuracy:v1.0.10:start -->
+
+### v1.0.10
+
+![辞書ごとの正解率と 95% 信頼区間（v1.0.10）](docs/accuracy/v1.0.10.svg)
+
+| 辞書（v1.0.10）                     | 正しい / 抜き取り | 正解率 | 95% 信頼区間 |
+| ----------------------------------- | ----------------: | -----: | -----------: |
+| `SKK-JISYO.dainihonkokugojiten.noL` |       1990 / 2000 |  99.5% | 99.1%〜99.7% |
+
+- 抜き取りの条件: 各辞書から 2000 件（シード値 3383424333）（[docs/accuracy/v1.0.10/sample.json](docs/accuracy/v1.0.10/sample.json)）
+- シード値の事前記録: 確認済み（シード値の記録 7c50d0a 2026-10-05 → 判定の記録 a8bc3fc 2026-10-05）
+- 人の確認: 必要だが未実施（理由: v1.0.7 から規則が変わった（src/align.ts、src/cleanse.ts））
+- 注意: L 除外辞書だけを評価した（検証済み・未検証の辞書は測っていない）。字の読みの学習（v1.0.9）と日葡辞書による字形の修復の規則は、それぞれの増えた見出しの判定を見て決めたが、この標本は別のシード値で、規則をコミットした後に抜き取った
+
+<!-- accuracy:v1.0.10:end -->
 
 <!-- accuracy:v1.0.7:start -->
 
@@ -367,7 +381,7 @@ data/
 │       ├── R0000001.{xml,json,txt}  ndlocr-lite の出力（画像ごと）
 │       └── run-*.json, run-*.log    実行コマンド・バージョンとログ
 ├── tmp/ndlocr-lite-input/<pid>/  ndlocr-lite の入力（未処理の画像へのハードリンク）
-├── raw/resources/                SKK-JISYO.L（コミット固定）と Unihan.zip
+├── raw/resources/                SKK-JISYO.L（コミット固定）、Unihan.zip、JMdict、日葡辞書見出し語データ
 ├── work/<pid>.json               作業用 JSON
 ├── extract/<pid>.json            見出し語・表記の候補
 ├── extract-ndl/<pid>.json        NDL 側 OCR から取り出した見出し語の候補（クレンジングでの突き合わせ用）
@@ -379,13 +393,13 @@ data/
 
 辞書は UTF-8 版（`utf-8/`）と EUC-JP 版（`euc-jp/`）の2つを出す。ファイル名はどちらも同じ。
 
-| ファイル                                                     | 内容                                                                                                   |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `utf-8/SKK-JISYO.dainihonkokugojiten`、`euc-jp/…`            | 検証済み（SKK-JISYO.L・JMdict との一致、または Unihan の音訓・漢語の字音で読みと表記が対応）のエントリ |
-| `utf-8/SKK-JISYO.dainihonkokugojiten.noL`、`euc-jp/…`        | 上から SKK-JISYO.L にある候補を除いたもの                                                              |
-| `utf-8/SKK-JISYO.dainihonkokugojiten.unverified`、`euc-jp/…` | 検証できなかったエントリ。誤りを多く含む                                                               |
-| `entries.tsv`                                                | 全候補の一覧（状態、検証方法、補正の記録、紙面画像の切り出し URL）                                     |
-| `report.md`                                                  | 件数の内訳                                                                                             |
+| ファイル                                                     | 内容                                                                                                                                                     |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `utf-8/SKK-JISYO.dainihonkokugojiten`、`euc-jp/…`            | 検証済み（SKK-JISYO.L・JMdict との一致、または Unihan の音訓・漢語の字音で読みと表記が対応。日葡辞書を根拠に字形の取り違えを直したものを含む）のエントリ |
+| `utf-8/SKK-JISYO.dainihonkokugojiten.noL`、`euc-jp/…`        | 上から SKK-JISYO.L にある候補を除いたもの                                                                                                                |
+| `utf-8/SKK-JISYO.dainihonkokugojiten.unverified`、`euc-jp/…` | 検証できなかったエントリ。誤りを多く含む                                                                                                                 |
+| `entries.tsv`                                                | 全候補の一覧（状態、検証方法、補正の記録、紙面画像の切り出し URL）                                                                                       |
+| `report.md`                                                  | 件数の内訳                                                                                                                                               |
 
 EUC-JP 版は、従来の SKK 辞書（SKK-JISYO.L など）と同じく ASCII と JIS X 0208 の範囲で符号化する。
 JIS X 0208 に無い文字（一部の旧字体など）を含む候補は EUC-JP 版から除く（除いた数は `report.md` に出す）。多くは旧字体の候補で、同じ語の新字体の候補は残る。
