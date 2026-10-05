@@ -923,7 +923,7 @@ function splitNotation(
  *   （しぶ-の-ぢん 四武陣 → しぶのじん）ので、SKK の見出しに ぢ・づ が残る候補は採用しない
  *
  * 連濁・半濁点の条件は、三系統すべてが濁点・半濁点まで同じに読んだ候補には課さない。
- * 連濁の条件は、別のエンジン（紙面全体と NDL 側 OCR）の読みが濁音の字まで一致する候補にも課さない。
+ * 連濁・半濁点の条件は、別のエンジン（紙面全体と NDL 側 OCR）の読みが濁音の字まで一致する候補にも課さない。
  * 満たさない候補は未検証にする
  */
 function requireAgreement(
@@ -1054,8 +1054,9 @@ function requireAgreement(
     ? "align-single-notation"
     : !withoutRendaku && !unanimous && !enginesAgree
     ? "align-rendaku"
-    // 試行: 別のエンジンの読みが濁音・半濁音の字まで一致するなら、半濁点の検査も緩める
-    : bpAmbiguous && !unanimous && !(Deno.env.get("RELAX_HANDAKUTEN") === "1" && enginesAgree)
+    // 別のエンジンの読みが濁音・半濁音の字まで一致するなら、半濁点の検査も緩める
+    // （これで新たに検証済みになった 488 件の抜き取りで 100 / 100 が正しかった）
+    : bpAmbiguous && !unanimous && !enginesAgree
     ? "align-handakuten"
     : /[ぢづ]/.test(e.skkKey ?? "") && !resolveDzi(e, ctx)
     ? "align-dzi"
