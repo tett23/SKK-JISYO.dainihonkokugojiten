@@ -1396,7 +1396,9 @@ export function cleanseVolume(
           reason: "列全体の読み直しの表記",
         });
       }
-      if (r && plain(r) !== plain(e.reading)) {
+      // 読みは字の取り違えだけを見る（字数の違う読みは、列の切り出しで字が落ちたことがある。
+      // 心字池 しんじ-の-いけ を しんじいけ と読んだ）
+      if (r && plain(r) !== plain(e.reading) && plain(r).length === plain(e.reading).length) {
         fullOptions.push({ reading: r, notation: e.notation, reason: "列全体の読み直しの読み" });
         if (fullNotation) {
           fullOptions.push({
@@ -1426,8 +1428,19 @@ export function cleanseVolume(
     // 通らなかったときに、L・JMdict に載るなら採る
     const strong = (m: Method | undefined) => m === "L" || m === "JMdict" || m === "dict-reading";
     if (fullOptions.length && !strong(r?.method)) {
-      const rf = resolve(fullOptions, e.pos, e.kango, suspicious, outlier, ctx, readingB);
-      if (rf && (!r || rf.method === "L" || rf.method === "JMdict")) r = rf;
+      for (const o of fullOptions) {
+        const rf = resolve([o], e.pos, e.kango, suspicious, outlier, ctx, readingB);
+        if (!rf || (r && rf.method !== "L" && rf.method !== "JMdict")) continue;
+        // 候補 1 つで引いたので、元の読み・表記からの補正をここで記録する
+        r = {
+          ...rf,
+          fix: rf.fix ??
+            (o.reading !== e.reading
+              ? { field: "reading", from: e.reading, to: o.reading, reason: o.reason ?? "" }
+              : { field: "notation", from: e.notation, to: o.notation, reason: o.reason ?? "" }),
+        };
+        break;
+      }
     }
     if (r?.method === "L-notation") {
       // 表記の補正は抜き取りで半数近くが誤りだったので適用せず、提案として残して未検証にする
