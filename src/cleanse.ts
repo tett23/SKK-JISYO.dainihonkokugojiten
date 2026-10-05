@@ -1378,6 +1378,35 @@ export function cleanseVolume(
         options.push({ reading: e.reading, notation: nn.notation, reason: "NDL 側 OCR の表記" });
       }
     }
+    // 見出しの列の全体の読み直し（recheck --full）の読み・表記は、ほかの候補でどれも照合できなかった
+    // ときだけ試す（先に試すと、元の読みで対応付けられた候補を差し置いて誤読の側を採ることがある）。
+    // 1 系統だけの読みなので、対応付けで通った候補は requireAgreement で系統間の一致を求める
+    const full = recheckFull[e.id];
+    const fullOptions: Option[] = [];
+    if (full && Deno.env.get("FULL_OPTIONS") !== "0") {
+      const r = full.reading ? hyphen(full.reading) : undefined;
+      const nn = normalizeNotation(full.notation);
+      const fullNotation = nn.notation && !nn.bad && !sameNotation(nn.notation, e.notation, ctx)
+        ? nn.notation
+        : undefined;
+      if (fullNotation) {
+        fullOptions.push({
+          reading: e.reading,
+          notation: fullNotation,
+          reason: "列全体の読み直しの表記",
+        });
+      }
+      if (r && plain(r) !== plain(e.reading)) {
+        fullOptions.push({ reading: r, notation: e.notation, reason: "列全体の読み直しの読み" });
+        if (fullNotation) {
+          fullOptions.push({
+            reading: r,
+            notation: fullNotation,
+            reason: "列全体の読み直しの読みと表記",
+          });
+        }
+      }
+    }
     if (e.order === "outlier") {
       const [lo, hi] = orderBounds(keys, i);
       for (const alt of orderAlternatives(e.reading, lo, hi)) {
@@ -1393,6 +1422,13 @@ export function cleanseVolume(
     // 二系統の OCR が一致した読みは、五十音順から外れていても Unihan での対応付けにかける
     const outlier = e.order === "outlier" && vote !== "agree" && vote !== "override";
     let r = resolve(options, e.pos, e.kango, suspicious, outlier, ctx, readingB);
+    // 列全体の読み直しの候補は、ほかの候補で照合できなかったか、対応付け（系統間の一致を求める）でしか
+    // 通らなかったときに、L・JMdict に載るなら採る
+    const strong = (m: Method | undefined) => m === "L" || m === "JMdict" || m === "dict-reading";
+    if (fullOptions.length && !strong(r?.method)) {
+      const rf = resolve(fullOptions, e.pos, e.kango, suspicious, outlier, ctx, readingB);
+      if (rf && (!r || rf.method === "L" || rf.method === "JMdict")) r = rf;
+    }
     if (r?.method === "L-notation") {
       // 表記の補正は抜き取りで半数近くが誤りだったので適用せず、提案として残して未検証にする
       e.suggestions.push({ ...r.fix!, reason: r.fix!.reason + "（未適用）" });
