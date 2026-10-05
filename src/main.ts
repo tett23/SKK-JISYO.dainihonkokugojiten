@@ -28,6 +28,7 @@ import { learnReadings, withLearnedReadings } from "./learned_readings.ts";
 import { loadNippo } from "./nippo.ts";
 import { loadKanjidic2, withKanjidic } from "./kanjidic.ts";
 import { applyJudgments, loadJudgments } from "./judged.ts";
+import { loadWiktionary, withWiktionary } from "./wiktionary.ts";
 import {
   applyNotes,
   extractNotes,
@@ -235,6 +236,15 @@ async function cleanseStep(pids: string[]) {
   const nePath = Deno.env.get("JMNEDICT");
   const ne = nePath ? await loadJmdict(nePath) : undefined;
   const base = buildContext(L, unihan, jm);
+  // Wiktionary の表記・読みを照合に足す（WIKTIONARY=0 で無効）。字ごとの清濁の統計
+  // （readingStats）には入れない（入れると統計の外れで未検証になる候補が 31 件増える）
+  const wikt = Deno.env.get("WIKTIONARY") === "0"
+    ? undefined
+    : await loadWiktionary(resourcePaths.wiktionary);
+  if (wikt && base.jm) {
+    console.log(`  Wiktionary: ${wikt.entries} 語`);
+    base.jm = withWiktionary(base.jm, wikt);
+  }
   if (ne && base.jm) {
     const merged = new Map(base.jm.bySkeleton);
     for (const [k, forms] of ne.bySkeleton) merged.set(k, [...(merged.get(k) ?? []), ...forms]);
@@ -268,7 +278,9 @@ async function cleanseStep(pids: string[]) {
     // 発音の注記（紙面の画像から取り出したもの）に従って 大夫 の見出しを直す
     const noted = applyNotes(result, await loadNotes(pid));
     if (noted) console.log(`  発音の注記で直した見出し: ${noted}`);
-    if (judgments) console.log(`  紙面との照合の判定で移した見出し: ${applyJudgments(result, judgments)}`);
+    if (judgments) {
+      console.log(`  紙面との照合の判定で移した見出し: ${applyJudgments(result, judgments)}`);
+    }
     const dest = paths.cleanseJson(pid);
     await ensureDir(dirname(dest));
     await Deno.writeTextFile(dest, JSON.stringify(result, null, 2) + "\n");
