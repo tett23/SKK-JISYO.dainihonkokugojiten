@@ -1006,9 +1006,31 @@ function requireAgreement(
   // （連濁の検査をこれで緩めて新たに検証済みになった 765 件の抜き取りで 100 / 100 が正しかった）
   const enginesAgree = !!readingB &&
     bare(readings[0]!) === target && bare(readingB) === target;
+  // 試行: 表記を字ごとに比べる。各字が 2 系統以上で一致するか、ほかの系統が読んだ字に置き換えると
+  // 読みに合わなくなる（誤読と言える）なら、その字は決まる。1 系統だけが読んだ字は 1 つまでとする
+  // （盆荒男子 / 益荒男子 の 益。公盆 / 鴻益 の 鴻 は 公 も こう と読めるので決まらない）
+  const charVote = Deno.env.get("RELAX_NOTATION") === "1" && !e.okuri && (() => {
+    const t = [...toShinjitai(e.notation!, ctx.unihan)];
+    const sameChar = (a: string, b: string) =>
+      a === b || (ctx.unihan.variants.get(a)?.has(b) ?? false);
+    const others = notations.slice(0, 3).filter((n): n is string => !!n)
+      .map((n) => [...toShinjitai(n, ctx.unihan)]).filter((n) => n.length === t.length);
+    let single = 0;
+    for (const [i, c] of t.entries()) {
+      const support = others.filter((o) => sameChar(o[i], c)).length;
+      if (support >= 2) continue;
+      if (support === 0) return false;
+      const alts = new Set(others.map((o) => o[i]).filter((a) => !sameChar(a, c)));
+      if ([...alts].some((a) => !refutedByKanon(e.reading, t.with(i, a).join(""), ctx))) {
+        return false;
+      }
+      single++;
+    }
+    return single <= 1;
+  })();
   const reason = agreeing < 2 && !readingByKanon && !skipReading
     ? "align-single-reading"
-    : notations.slice(0, 3).filter(same).length < 2 &&
+    : !charVote && notations.slice(0, 3).filter(same).length < 2 &&
         // 列全体の読み直しは元の OCR と同じエンジンなので、別のエンジン（NDL 側 OCR）が別の表記を
         // 読んでいるときは数に入れない（嘉耦 を 嘉隅 と二度読んだ）。NDL 側 OCR の表記が漢語の
         // 読みに合わない誤読なら数に入れる
