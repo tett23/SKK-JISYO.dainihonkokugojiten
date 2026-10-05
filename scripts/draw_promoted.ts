@@ -27,9 +27,7 @@ for (const pid of ["954645", "954646", "954647", "954648"]) {
     // deno-lint-ignore no-explicit-any
     const o = old.get(e.id) as any;
     const reason = Deno.env.get("REASON");
-    const tier = reason === "-"
-      ? e.status === "unverified" && !e.reason
-      : e.reason === reason;
+    const tier = reason === "-" ? e.status === "unverified" && !e.reason : e.reason === reason;
     if (reason ? tier : e.status === "accepted" && o?.status !== "accepted") {
       pool.push({ pid, e });
     }
