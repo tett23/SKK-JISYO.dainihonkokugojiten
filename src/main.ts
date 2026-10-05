@@ -26,6 +26,7 @@ import { RECHECK_VARIANTS, recheckPaths, voteRecheck } from "./recheck_paths.ts"
 import { fetchResources, loadSkkL, loadUnihan, resourcePaths } from "./resources.ts";
 import { learnReadings, withLearnedReadings } from "./learned_readings.ts";
 import { loadNippo } from "./nippo.ts";
+import { loadKanjidic2, withKanjidic } from "./kanjidic.ts";
 import {
   applyNotes,
   extractNotes,
@@ -63,6 +64,7 @@ notes  大夫・太夫 の見出しの読みの傍の発音の注記（たゆう
 recheck  検証済み・未検証の候補のうち NDL 側 OCR と読みが一致しないものの見出しを切り出して
        ndlocr-lite で読み直し、data/recheck/<pid>.json に保存する（検証済みを先に処理する）。
        --status <accepted|unverified>  対象を絞る
+       --all-unverified  （--full と）表記のある未検証の候補すべてを読み直す
        --full  見出しの列の全体を切り出して読み直す（表記まで写す）。系統間で読みか表記が一致せずに
                未検証にした候補が対象で、data/recheck-full/<pid>.json に保存する
        --variants  拡大方法を変えて（双三次 2 倍、Lanczos 3 倍、その鮮鋭化）読み直す。Unihan での
@@ -214,12 +216,18 @@ async function loadNdlCandidates(pid: string): Promise<Map<number, NdlCandidate[
 }
 
 async function cleanseStep(pids: string[]) {
-  const [L, unihan, jm] = await Promise.all([
+  let [L, unihan, jm] = await Promise.all([
     loadSkkL(),
     loadUnihan(),
     Deno.env.get("NO_JMDICT") ? undefined : loadJmdict(resourcePaths.jmdict),
   ]);
   // Unihan に無い字の読みを L・JMdict から学習して足す
+  // KANJIDIC2 の音訓を Unihan に足す（KANJIDIC=0 で無効、KANJIDIC_NANORI=1 で名乗りも）
+  const kd = Deno.env.get("KANJIDIC") === "0" ? undefined : await loadKanjidic2();
+  if (kd) {
+    unihan = withKanjidic(unihan, kd, { nanori: Deno.env.get("KANJIDIC_NANORI") === "1" });
+    console.log(`  KANJIDIC2: ${kd.size} 字`);
+  }
   const learned = learnReadings(L, jm, unihan);
   console.log(`  学習した字の読み: ${[...learned.values()].flat().length}（${learned.size} 字）`);
   const ctx = {
@@ -306,7 +314,16 @@ async function buildStep(pids: string[]) {
 
 if (import.meta.main) {
   const args = parseArgs(Deno.args, {
-    boolean: ["force", "force-ocr", "help", "images", "reuse-seed", "full", "variants"],
+    boolean: [
+      "force",
+      "force-ocr",
+      "help",
+      "images",
+      "reuse-seed",
+      "full",
+      "variants",
+      "all-unverified",
+    ],
     string: [
       "pages",
       "source",
@@ -392,7 +409,12 @@ if (import.meta.main) {
     for (const status of statuses) {
       for (const pid of pids) {
         const volume: CleanVolume = JSON.parse(await Deno.readTextFile(paths.cleanseJson(pid)));
-        const list = targets(volume, mode).filter((e) => e.status === status);
+        // --all-unverified: 列全体の読み直しを、表記のある未検証の候補すべてに広げる
+        const list = (args["all-unverified"] && mode === "full"
+          ? volume.entries.filter((e) =>
+            e.notation
+          )
+          : targets(volume, mode)).filter((e) => e.status === status);
         console.log(`[recheck] ${pid} ${status} ${mode}: ${list.length} entries`);
         const count = await makeCrops(pid, list, mode);
         await ocrCrops(pid, count, ndlocrLiteConfigFromEnv(), mode);
