@@ -1,5 +1,6 @@
 import { alignReading, segmentReading } from "./align.ts";
 import { kanonSegment } from "./kanon.ts";
+import { inNippo, type Nippo } from "./nippo.ts";
 import { buildReadingStats, type ReadingStats, voicingAnomalies } from "./reading_stats.ts";
 import type { BBox, Candidate, ExtractVolume } from "./extract.ts";
 import type { NdlCandidate } from "./extract_ndl.ts";
@@ -35,6 +36,8 @@ export type Method =
   | "align"
   /** 漢語の読みが、表記の字ごとの字音（『廣韻』の音韻地位から作る漢音・呉音）に区切れた */
   | "kanon"
+  /** OCR が取り違えた字形を直した読みが『日葡辞書』の見出しにあり、表記にも対応した */
+  | "nippo"
   | "none";
 
 export type Fix = {
@@ -100,6 +103,8 @@ export type Context = {
   readingStats: ReadingStats;
   /** L・JMdict から学習した字の読みを足した Unihan（learned_readings.ts）。対応付けの予備に使う */
   learned?: Unihan;
+  /** 『日葡辞書』の見出し語（nippo.ts）。OCR の読みの取り違えの修復の根拠に使う */
+  nippo?: Nippo;
 };
 
 const HAN_RE = /[\p{Script=Han}々〆ヶ〻]/u;
@@ -883,6 +888,8 @@ function requireAgreement(
   ctx: Context,
   /** 見出しの列の全体を切り出した読み直し（表記まで写す）。一致の数え上げにだけ使う */
   full?: { reading?: string; notation?: string },
+  /** 読みの系統間の一致を求めない（日葡辞書による修復。どの系統も同じように取り違えている） */
+  skipReading = false,
 ) {
   const target = plain(e.reading);
   const readings = [normalizeReading(e.source.reading.replaceAll("ー", "-")), readingB, readingC];
@@ -943,7 +950,7 @@ function requireAgreement(
     const c = [...bare(r)];
     return c.length === t.length && t.every((ch, i) => !VOICED.test(ch) || c[i] === ch);
   });
-  const reason = agreeing < 2 && !readingByKanon
+  const reason = agreeing < 2 && !readingByKanon && !skipReading
     ? "align-single-reading"
     : notations.slice(0, 3).filter(same).length < 2 &&
         // 列全体の読み直しは元の OCR と同じエンジンなので、別のエンジン（NDL 側 OCR）が別の表記を
@@ -1025,6 +1032,72 @@ const shiftable = (c: string) =>
   /[あかがさざただなはばぱまやらわえけげせぜてでねへべぺめれおこごそぞとどのほぼぽもよろゃょ]/.test(
     c,
   );
+
+/**
+ * 二系統の OCR が同じように取り違える字形（SYSTEMATIC_CONFUSABLE: う/ら、き/さ、あ/の/め）を、
+ * 『日葡辞書』（1603）の見出しを根拠に直す。
+ *
+ * 系統間で読みが一致していても、どの系統も同じ字形を取り違えることがある（さん-あくだう を
+ * さん-あくだら、ふ-たう を ふたら と読んだ）。今の読みが日葡辞書に無く、1 文字を直した読みが
+ * 日葡辞書にあって表記にも対応するなら、それに直す。日葡辞書との照合は、1603 年以降に合一した
+ * 区別（開合、四つ仮名）と清濁を捨てて行う（nippo.ts）。清濁は語形の変化と区別できないので直さない。
+ * 直した読みは、読みの系統間の一致は求めず、表記の一致と清濁の検査（requireAgreement）は課す
+ */
+function repairByNippo(
+  e: CleanEntry,
+  ctx: Context,
+  readingB: string | undefined,
+  readingC: string | undefined,
+  notationB: string | undefined,
+  notationC: string | undefined,
+  full?: { reading?: string; notation?: string },
+) {
+  if (!e.notation || !/^[\p{Script=Han}々]+$/u.test(e.notation)) return;
+  const verb = e.pos.category === "verb";
+  if (e.pos.category === "adjective") return;
+  const opts = { kango: e.kango, verb };
+  if (inNippo(ctx.nippo!, e.reading, opts)) return;
+  const matches = repairAlternatives(e.reading, SYSTEMATIC_CONFUSABLE)
+    // 区切り "-" に戻す案（repairAlternatives の し・ら → -）は字形の取り違えではないので使わない
+    .filter((r) =>
+      r.length === e.reading.length && !r.includes("--") &&
+      [...r].filter((c) => c === "-").length === [...e.reading].filter((c) => c === "-").length &&
+      bareKanaAll(r) !== bareKanaAll(e.reading) && inNippo(ctx.nippo!, r, opts)
+    )
+    .flatMap((reading) => {
+      const m = matchL(reading, e.notation!, e.pos, e.kango, ctx) ??
+        matchJM(reading, e.notation!, e.pos, e.kango, ctx) ??
+        matchAlign(reading, e.notation!, e.pos, e.kango, ctx) ??
+        (e.kango && !verb ? matchKanon(reading, e.notation!, ctx) : undefined);
+      return m ? [{ reading, m }] : [];
+    });
+  if (matches.length !== 1) return;
+  const [{ reading, m }] = matches;
+  const before = structuredClone(e);
+  e.fixes.push({
+    field: "reading",
+    from: e.reading,
+    to: reading,
+    reason: "取り違えやすい字形を直すと日葡辞書の見出しと一致",
+  });
+  e.reading = reading;
+  e.modern = m.modern;
+  e.skkKey = m.skkKey;
+  e.okuri = m.okuri;
+  e.method = "nippo";
+  e.status = "accepted";
+  delete e.reason;
+  requireAgreement(e, readingB, readingC, notationB, notationC, ctx, full, true);
+  if (e.status !== "accepted") {
+    // 戻す（清濁の検査などで通らなかった）
+    for (const k of Object.keys(e) as (keyof CleanEntry)[]) if (!(k in before)) delete e[k];
+    Object.assign(e, before);
+  }
+}
+
+/** 濁点・半濁点を除いた読み（清濁だけの違いを見分ける） */
+const bareKanaAll = (r: string) =>
+  r.normalize("NFD").replace(/[\u3099\u309A]/g, "").normalize("NFC");
 
 /**
  * 三系統（ndlocr-lite の紙面全体、NDL 側 OCR、見出しの切り出しの読み直し）の読みの多数決。
@@ -1272,6 +1345,17 @@ export function cleanseVolume(
           recheckFull[e.id],
         );
       }
+    }
+    if (e.status === "unverified" && ctx.nippo) {
+      repairByNippo(
+        e,
+        ctx,
+        readingB,
+        readingC,
+        notationB.notation,
+        notationC.notation,
+        recheckFull[e.id],
+      );
     }
     if (e.status !== "accepted" && !(e.reason?.startsWith("align-") && e.skkKey)) {
       // 未検証: 既定の変換結果を使う（系統間の一致が足りずに未検証にした候補は、対応付けで決めた
