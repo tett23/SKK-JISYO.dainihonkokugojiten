@@ -22,6 +22,9 @@ export function parseKanjidic2(xml: string): Kanjidic {
     for (const r of body.matchAll(/<reading r_type="(ja_on|ja_kun)"[^>]*>(.*?)<\/reading>/g)) {
       const v = kataToHira(r[2]).replaceAll(/[.\-]/g, "");
       if (!/^[ぁ-ゖー]+$/.test(v)) continue;
+      // 1 字の接尾・接頭の読み（生 -う、芝生 の ふ が転呼した形）は採らない。語中の は行 を
+      // わ行・あ行 と読む見出し（かや-ふ を かやう）を通してしまう
+      if (r[2].includes("-") && v.length === 1) continue;
       (r[1] === "ja_on" ? on : kun).push(v);
     }
     for (const r of body.matchAll(/<nanori>(.*?)<\/nanori>/g)) {
