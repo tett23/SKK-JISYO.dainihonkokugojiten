@@ -2,6 +2,7 @@ import { decode, Image } from "@matmen/imagescript";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
 import { paths, REPO_ROOT } from "./config.ts";
+import { ndlocrPython } from "./ndlocr_python.ts";
 import type { CleanEntry, CleanVolume } from "./cleanse.ts";
 import { parseHead } from "./extract.ts";
 import { imageFileName } from "./ndl.ts";
@@ -170,19 +171,6 @@ export function variantTargets(
     (e.method === "align" || /^(align-|voicing)/.test(e.reason ?? "")) &&
     /[がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ]/.test(e.reading)
   );
-}
-
-/** ndlocr-lite の Python（PIL を含む）。NDLOCR_LITE_PYTHON か、ndlocr-lite のスクリプトの shebang から決める */
-async function ndlocrPython(): Promise<string> {
-  const env = Deno.env.get("NDLOCR_LITE_PYTHON");
-  if (env) return env;
-  const { stdout } = await new Deno.Command("which", { args: ["ndlocr-lite"] }).output();
-  const script = new TextDecoder().decode(stdout).trim();
-  const first = (await Deno.readTextFile(script)).split("\n")[0];
-  if (!first.startsWith("#!")) {
-    throw new Error("ndlocr-lite の Python が分からない（NDLOCR_LITE_PYTHON を設定する）");
-  }
-  return first.slice(2).trim();
 }
 
 /** 変種ごとの切り出しを作る（読み直し済みは飛ばす）。変種ごとの枚数を返す */

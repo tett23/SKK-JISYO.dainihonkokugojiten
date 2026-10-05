@@ -70,6 +70,7 @@ deno task all     # 上記を順に実行
 deno task resources # クレンジングに使う SKK-JISYO.L・Unihan・JMdict・日葡辞書見出し語データを取得
 deno task recheck   # NDL 側 OCR と読みが食い違う見出しを切り出して読み直す（画像が必要、数時間）
 deno task cleanse   # 候補を照合・補正して data/cleanse/<pid>.json に保存
+deno task notes     # 大夫・太夫 の読みの傍の発音の注記（たゆう の ュ）を紙面から取り出す（画像が必要）。この後もう一度 cleanse
 deno task build     # SKK 辞書とレポートを dist/ に出力（DIST_DIR で出力先を変えられる）
 deno task compare <旧 cleanse> <新 cleanse>  # 2 つのビルドを比べる
 ```
@@ -358,6 +359,8 @@ OCR や抽出の処理を変えたときは、入力データを作り直して 
 deno task extract
 deno task cleanse          # data/extract-ndl/ が無ければ NDL 側 OCR の候補も作られる
 deno task recheck          # 読み直しの対象はクレンジング結果から選ぶ
+deno task cleanse
+deno task notes            # 発音の注記の対象もクレンジング結果から選ぶ
 deno task cleanse
 deno task pack-inputs      # dist/inputs.tar.gz
 gh release upload inputs dist/inputs.tar.gz --clobber
