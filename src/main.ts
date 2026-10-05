@@ -27,6 +27,7 @@ import { fetchResources, loadSkkL, loadUnihan, resourcePaths } from "./resources
 import { learnReadings, withLearnedReadings } from "./learned_readings.ts";
 import { loadNippo } from "./nippo.ts";
 import { loadKanjidic2, withKanjidic } from "./kanjidic.ts";
+import { applyJudgments, loadJudgments } from "./judged.ts";
 import {
   applyNotes,
   extractNotes,
@@ -244,6 +245,7 @@ async function cleanseStep(pids: string[]) {
     learned: withLearnedReadings(unihan, learned),
     nippo: await loadNippo(),
   };
+  const judgments = Deno.env.get("JUDGED") === "1" ? await loadJudgments() : undefined;
   for (const pid of pids) {
     console.log(`[cleanse] ${pid}`);
     const extract: ExtractVolume = JSON.parse(await Deno.readTextFile(paths.extractJson(pid)));
@@ -266,6 +268,7 @@ async function cleanseStep(pids: string[]) {
     // 発音の注記（紙面の画像から取り出したもの）に従って 大夫 の見出しを直す
     const noted = applyNotes(result, await loadNotes(pid));
     if (noted) console.log(`  発音の注記で直した見出し: ${noted}`);
+    if (judgments) console.log(`  紙面との照合の判定で移した見出し: ${applyJudgments(result, judgments)}`);
     const dest = paths.cleanseJson(pid);
     await ensureDir(dirname(dest));
     await Deno.writeTextFile(dest, JSON.stringify(result, null, 2) + "\n");

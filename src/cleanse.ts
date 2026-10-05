@@ -38,6 +38,8 @@ export type Method =
   | "kanon"
   /** OCR が取り違えた字形を直した読みが『日葡辞書』の見出しにあり、表記にも対応した */
   | "nippo"
+  /** 未検証の見出しを紙面と照合して正しいと判定した（試行。src/judged.ts） */
+  | "judged"
   | "none";
 
 export type Fix = {
