@@ -55,9 +55,13 @@ export function withKanjidic(unihan: Unihan, kd: Kanjidic, { nanori = false } = 
     const all = new Set([...cur.on, ...cur.kun, ...r.on, ...r.kun]);
     // 連濁した形の読み（造 -づくり、立 -だて）は採らない。連濁でしか対応しない読みは OCR の濁点の
     // 誤読と見分けられないので、連濁の検査（requireAgreement）を素通りさせないため
-    const notRendaku = (k: string) => unvoiced(k) === k || !all.has(unvoiced(k));
+    // ぢ・づ で始まる読み（尽 -づく）は連濁した形でしかない（現代仮名遣いでは語頭に ぢ・づ を書かない）
+    const notRendaku = (k: string) =>
+      !/^[ぢづ]/.test(k) && (unvoiced(k) === k || !all.has(unvoiced(k)));
     readings.set(ch, {
-      on: [...new Set([...cur.on, ...r.on])],
+      // 音読みも、清音の形がある濁音の形（登 ドウ）は採らない。漢語の濁点の読み分け（登記 とうき /
+      // どうき）が決まらなくなる
+      on: [...new Set([...cur.on, ...r.on])].filter((k) => cur.on.includes(k) || notRendaku(k)),
       kun: [...new Set([...cur.kun, ...r.kun, ...(nanori ? r.nanori : [])])].filter((k) =>
         cur.kun.includes(k) || notRendaku(k)
       ),

@@ -223,14 +223,20 @@ async function cleanseStep(pids: string[]) {
     loadUnihan(),
     Deno.env.get("NO_JMDICT") ? undefined : loadJmdict(resourcePaths.jmdict),
   ]);
-  // Unihan に無い字の読みを L・JMdict から学習して足す
+  // Unihan に無い字の読みを L・JMdict から学習して足す。学習は KANJIDIC2 を足す前と後の Unihan の
+  // 両方で行い、合わせる（足した後だけだと、語全体が対応付けられて根拠の語が減り、小鐵 こがね の
+  // 鐵 がね などを学習しなくなる。足す前だけだと、甲斐 かひ のように KANJIDIC2 の読みを手がかりに
+  // 学習する読みが無くなる）
+  const learned = learnReadings(L, jm, unihan);
   // KANJIDIC2 の音訓を Unihan に足す（KANJIDIC=0 で無効、KANJIDIC_NANORI=1 で名乗りも）
   const kd = Deno.env.get("KANJIDIC") === "0" ? undefined : await loadKanjidic2();
   if (kd) {
     unihan = withKanjidic(unihan, kd, { nanori: Deno.env.get("KANJIDIC_NANORI") === "1" });
     console.log(`  KANJIDIC2: ${kd.size} 字`);
+    for (const [ch, rs] of learnReadings(L, jm, unihan)) {
+      learned.set(ch, [...new Set([...(learned.get(ch) ?? []), ...rs])]);
+    }
   }
-  const learned = learnReadings(L, jm, unihan);
   console.log(`  学習した字の読み: ${[...learned.values()].flat().length}（${learned.size} 字）`);
   // 試行: JMnedict（固有名詞）を JMdict と同じように照合に使う（JMNEDICT=<パス>）
   const nePath = Deno.env.get("JMNEDICT");
