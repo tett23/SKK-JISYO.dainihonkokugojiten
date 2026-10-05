@@ -1008,20 +1008,33 @@ function requireAgreement(
     bare(readings[0]!) === target && bare(readingB) === target;
   // 試行: 表記を字ごとに比べる。各字が 2 系統以上で一致するか、ほかの系統が読んだ字に置き換えると
   // 読みに合わなくなる（誤読と言える）なら、その字は決まる。1 系統だけが読んだ字は 1 つまでとする
-  // （盆荒男子 / 益荒男子 の 益。公盆 / 鴻益 の 鴻 は 公 も こう と読めるので決まらない）
+  // （盆荒男子 / 益荒男子 の 益。公盆 / 鴻益 の 鴻 は 公 も こう と読めるので決まらない。
+  // 白重藤 / 白重籐 の 藤 は、籐 も連濁で どう と読めるので決まらない）
   const charVote = Deno.env.get("RELAX_NOTATION") === "1" && !e.okuri && (() => {
     const t = [...toShinjitai(e.notation!, ctx.unihan)];
     const sameChar = (a: string, b: string) =>
       a === b || (ctx.unihan.variants.get(a)?.has(b) ?? false);
     const others = notations.slice(0, 3).filter((n): n is string => !!n)
-      .map((n) => [...toShinjitai(n, ctx.unihan)]).filter((n) => n.length === t.length);
+      .map((n) => [...toShinjitai(n, ctx.unihan)]);
+    // 字数の違う表記を読んだ系統があれば、表記の字が欠けている（篤 / 篤癧）おそれがあるので決めない
+    if (others.some((n) => n.length !== t.length)) return false;
+    // ほかの系統の字に置き換えた表記が、連濁を許して読みに合うか
+    const fits = (n: string) =>
+      !refutedByKanon(e.reading, n, ctx) ||
+      modernVariants(e.reading, { kango: e.kango }).some((v) =>
+        notationForms(n, ctx).some((f) =>
+          [ctx.unihan, ...(ctx.learned ? [ctx.learned] : [])].some((u) =>
+            alignReading(f, v, u, { maxTrailing, rendaku: true })
+          )
+        )
+      );
     let single = 0;
     for (const [i, c] of t.entries()) {
       const support = others.filter((o) => sameChar(o[i], c)).length;
       if (support >= 2) continue;
       if (support === 0) return false;
       const alts = new Set(others.map((o) => o[i]).filter((a) => !sameChar(a, c)));
-      if ([...alts].some((a) => !refutedByKanon(e.reading, t.with(i, a).join(""), ctx))) {
+      if ([...alts].some((a) => fits(t.with(i, a).join("")))) {
         return false;
       }
       single++;
