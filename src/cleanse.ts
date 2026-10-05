@@ -1351,7 +1351,20 @@ export function cleanseVolume(
     }
     if (r && r.method !== "L-notation") {
       const split = splitNotation(e.notation, r, e, ctx);
-      if (split === false) {
+      // 二つ並べた表記（骨身骨肉）で、残りの字が辞書に合った表記と同じ字数（2 字以上）なら、
+      // 合った表記だけを採る（もう一方は登録しないが、採る表記は辞書で確かめたもの）
+      const kept = [...r.notation].length;
+      const rest = [...e.notation].length - kept;
+      const pairOnly = split === false && kept >= 2 && plain(e.reading).length >= 2 &&
+        rest === kept && (e.notation.startsWith(r.notation) || e.notation.endsWith(r.notation));
+      if (pairOnly) {
+        e.suggestions.push({
+          field: "notation",
+          from: e.notation!,
+          to: r.notation,
+          reason: "二つ並べた表記のうち辞書に合う方だけを採る",
+        });
+      } else if (split === false) {
         // 表記の字を削って辞書に合わせると、二つ並べた表記の片方だけが残る（零翻 → 零）。
         // 残りの字も同じ読みで通るときだけ両方を採り、それ以外は採らない
         e.suggestions.push({
