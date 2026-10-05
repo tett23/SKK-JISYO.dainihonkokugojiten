@@ -1034,7 +1034,7 @@ const shiftable = (c: string) =>
   );
 
 /**
- * 二系統の OCR が同じように取り違える字形（SYSTEMATIC_CONFUSABLE: う/ら、き/さ、あ/の/め）を、
+ * 二系統の OCR が同じように取り違える字形（う/ら、き/さ、あ/の/め）を、
  * 『日葡辞書』（1603）の見出しを根拠に直す。
  *
  * 系統間で読みが一致していても、どの系統も同じ字形を取り違えることがある（さん-あくだう を
@@ -1057,10 +1057,14 @@ function repairByNippo(
   if (e.pos.category === "adjective") return;
   const opts = { kango: e.kango, verb };
   if (inNippo(ctx.nippo!, e.reading, opts)) return;
-  const matches = repairAlternatives(e.reading, SYSTEMATIC_CONFUSABLE)
+  // つ は入声の字音（しつ、ざつ）と う・ら の間で取り違えの向きが決まらないので、う/ら だけを直す
+  // （全数の判定で つ を含む修復は 9 件中 9 件が誤りだった）
+  const matches = repairAlternatives(e.reading, NIPPO_CONFUSABLE)
     // 区切り "-" に戻す案（repairAlternatives の し・ら → -）は字形の取り違えではないので使わない
     .filter((r) =>
       r.length === e.reading.length && !r.includes("--") &&
+      // 語末の さ は形容詞の語幹に付いた名詞（こは-さ 強）なので き に直さない
+      !(e.reading.endsWith("さ") && r.endsWith("き")) &&
       [...r].filter((c) => c === "-").length === [...e.reading].filter((c) => c === "-").length &&
       bareKanaAll(r) !== bareKanaAll(e.reading) && inNippo(ctx.nippo!, r, opts)
     )
@@ -1094,6 +1098,8 @@ function repairByNippo(
     Object.assign(e, before);
   }
 }
+
+const NIPPO_CONFUSABLE = ["うら", "きさ", "あのめ"];
 
 /** 濁点・半濁点を除いた読み（清濁だけの違いを見分ける） */
 const bareKanaAll = (r: string) =>
