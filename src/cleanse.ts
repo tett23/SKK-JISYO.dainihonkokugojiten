@@ -268,6 +268,12 @@ export function adjectiveForm(
   if (!v.endsWith("し")) return undefined;
   const stem = v.slice(0, -1);
   if (conjugation === "シク") return { modern: v + "い", skkKey: v + "i", stems: [v, stem] };
+  // 活用の種類が読めない（形 だけ、形三 などの誤読）ときは、ク活用に限られる語尾（なし、よし、
+  // にくし、やすし、くさし、ふかし など）だけを ク活用とする（おどろかし、にほはし は シク活用）
+  if (
+    conjugation !== "ク" &&
+    !/(なし|よし|にくし|やすし|くさし|[ふぶ]かし|ながし|がたし|かたし|のろし|とし|わるし)$/.test(v)
+  ) return undefined;
   return { modern: stem + "い", skkKey: stem + "i", stems: [stem] };
 }
 
