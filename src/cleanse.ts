@@ -1366,7 +1366,20 @@ export function cleanseVolume(
     if (e.status !== "accepted" && !(e.reason?.startsWith("align-") && e.skkKey)) {
       // 未検証: 既定の変換結果を使う（系統間の一致が足りずに未検証にした候補は、対応付けで決めた
       // 見出しのほうが確かなので、そのまま使う）。動詞・形容詞は送り仮名を最後の 1 文字とする
-      const modern = modernVariants(e.reading, { kango: e.kango })[0];
+      // 変換の候補のうち、表記に対応付けられるものを優先する。漢語の記号の無い見出しでは語中の ふ を
+      // ハ行転呼として う にするが、字音の ふ（大夫 たいふ）は転呼しない（うこんのたいう にしない）
+      const variants = modernVariants(e.reading, { kango: e.kango });
+      const forms = e.notation ? notationForms(e.notation, ctx) : [];
+      const maxTrailing = e.notation && [...e.notation].length === 1 ? 1 : 0;
+      const modern = OKURI_CATEGORIES.has(e.pos.category)
+        ? variants[0]
+        : variants.find((v) =>
+          forms.some((n) =>
+            [ctx.unihan, ...(ctx.learned ? [ctx.learned] : [])].some((u) =>
+              alignReading(n, v, u, { maxTrailing })
+            )
+          )
+        ) ?? variants[0];
       e.modern = modern;
       if (OKURI_CATEGORIES.has(e.pos.category)) {
         const oc = okuriChars(modern.slice(-1))[0];

@@ -26,6 +26,12 @@ import { RECHECK_VARIANTS, recheckPaths, voteRecheck } from "./recheck_paths.ts"
 import { fetchResources, loadSkkL, loadUnihan, resourcePaths } from "./resources.ts";
 import { learnReadings, withLearnedReadings } from "./learned_readings.ts";
 import { loadNippo } from "./nippo.ts";
+import {
+  applyNotes,
+  extractNotes,
+  loadNotes,
+  pronunciationNotesPath,
+} from "./pronunciation_notes.ts";
 import { loadJmdict } from "./jmdict.ts";
 import {
   extractNdlVolume,
@@ -52,6 +58,8 @@ extract  作業用 JSON から見出し語・表記の候補を data/extract/<pi
 resources  クレンジングに使う SKK-JISYO.L と Unihan を取得する。
 cleanse  候補を SKK-JISYO.L・Unihan・NDL 側 OCR と照合して補正し、data/cleanse/<pid>.json に保存する。
 build  クレンジング結果から SKK 辞書とレポートを dist/ に出力する（pid の指定は対象の絞り込み）。
+notes  大夫・太夫 の見出しの読みの傍の発音の注記（たゆう の ュ）を紙面の画像から取り出し、
+       data/pronunciation-notes/<pid>.json に保存する（cleanse の後に実行し、もう一度 cleanse する）。
 recheck  検証済み・未検証の候補のうち NDL 側 OCR と読みが一致しないものの見出しを切り出して
        ndlocr-lite で読み直し、data/recheck/<pid>.json に保存する（検証済みを先に処理する）。
        --status <accepted|unverified>  対象を絞る
@@ -238,6 +246,9 @@ async function cleanseStep(pids: string[]) {
       ),
     );
     const result = cleanseVolume(extract, ndl, ctx, voteRecheck(recheck, variants), recheckFull);
+    // 発音の注記（紙面の画像から取り出したもの）に従って 大夫 の見出しを直す
+    const noted = applyNotes(result, await loadNotes(pid));
+    if (noted) console.log(`  発音の注記で直した見出し: ${noted}`);
     const dest = paths.cleanseJson(pid);
     await ensureDir(dirname(dest));
     await Deno.writeTextFile(dest, JSON.stringify(result, null, 2) + "\n");
@@ -336,6 +347,13 @@ if (import.meta.main) {
   }
   if (command === "cleanse") {
     await cleanseStep(pids);
+    Deno.exit(0);
+  }
+  if (command === "notes") {
+    for (const pid of pids) {
+      const volume: CleanVolume = JSON.parse(await Deno.readTextFile(paths.cleanseJson(pid)));
+      console.log(`[notes] ${pid}: ${await extractNotes(volume)} 件`);
+    }
     Deno.exit(0);
   }
   if (command === "recheck") {
@@ -442,6 +460,7 @@ if (import.meta.main) {
             paths.recheckJson(v.pid),
             recheckPaths.json(v.pid, "full"),
             ...RECHECK_VARIANTS.map((m) => recheckPaths.json(v.pid, m)),
+            pronunciationNotesPath(v.pid),
           ]),
         ),
         // 同じ条件で抜き取り直したときは、記録済みの説明を引き継ぐ
