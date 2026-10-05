@@ -255,6 +255,23 @@ type Resolved = {
 const OKURI_CATEGORIES = new Set(["verb", "adjective"]);
 
 /**
+ * 形容詞の読み（現代仮名遣い）から、現代の終止形・SKK の見出し・表記に対応付ける語幹を作る。
+ * 文語の ク活用（たかし）は たかい / たかi、シク活用（うらめし）は うらめしい / うらめしi。
+ * 口語の形（ふとい）はそのまま。活用の種類が分からない文語の形は ク活用とみなす
+ */
+export function adjectiveForm(
+  v: string,
+  conjugation?: string,
+): { modern: string; skkKey: string; stems: string[] } | undefined {
+  if (v.length < 2) return undefined;
+  if (v.endsWith("い")) return { modern: v, skkKey: v.slice(0, -1) + "i", stems: [v.slice(0, -1)] };
+  if (!v.endsWith("し")) return undefined;
+  const stem = v.slice(0, -1);
+  if (conjugation === "シク") return { modern: v + "い", skkKey: v + "i", stems: [v, stem] };
+  return { modern: stem + "い", skkKey: stem + "i", stems: [stem] };
+}
+
+/**
  * SKK の送り仮名として妥当か。1 文字のほかは、一段動詞の「え段・い段 + る」（消える = き|える）と
  * 形容詞の「しい」に限る（聞かす を 聞く の「きk」に当てないため）
  */
@@ -371,7 +388,25 @@ function matchJM(reading: string, notation: string, pos: Pos, kango: boolean, ct
 
 function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean, ctx: Context) {
   // 形容詞は、文語の終止形から SKK の送りありの見出しの形が決まらないので対象にしない
-  if (pos.category === "adjective") return undefined;
+  if (pos.category === "adjective") {
+    // 形容詞は、文語の終止形（たか-し、うらめ-し）から現代の形（たかい、うらめしい）と SKK の見出し
+    // （たかi、うらめしi）を作り、語幹を表記に対応付ける（最後の字は訓読みだけで）
+    const found = new Map<string, { modern: string; skkKey: string; okuri: true }>();
+    for (const v of modernVariants(reading, { kango })) {
+      const a = adjectiveForm(v, pos.conjugation);
+      if (!a) continue;
+      if (
+        notationForms(notation, ctx).some((n) =>
+          a.stems.some((st) =>
+            [ctx.unihan, ...(ctx.learned ? [ctx.learned] : [])].some((u) =>
+              alignReading(n, st, u, { maxTrailing: 0, lastKun: true })
+            )
+          )
+        )
+      ) found.set(a.skkKey, { modern: a.modern, skkKey: a.skkKey, okuri: true as const });
+    }
+    return found.size === 1 ? [...found.values()][0] : undefined;
+  }
   if (pos.category === "verb") {
     // 動詞は、読みの最後の 1 文字（送り仮名）を除いた語幹を表記に対応付ける。
     // 底本の表記は送り仮名を省く（奧寄 = あう-よる）。見出しは語幹 + 最後の字の行の子音で、
@@ -1381,7 +1416,14 @@ export function cleanseVolume(
           )
         ) ?? variants[0];
       e.modern = modern;
-      if (OKURI_CATEGORIES.has(e.pos.category)) {
+      const adj = e.pos.category === "adjective"
+        ? adjectiveForm(modern, e.pos.conjugation)
+        : undefined;
+      if (adj) {
+        e.modern = adj.modern;
+        e.okuri = true;
+        e.skkKey = adj.skkKey;
+      } else if (OKURI_CATEGORIES.has(e.pos.category)) {
         const oc = okuriChars(modern.slice(-1))[0];
         e.okuri = true;
         e.skkKey = oc && modern.length >= 2 ? modern.slice(0, -1) + oc : undefined;
