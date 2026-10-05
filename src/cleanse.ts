@@ -991,6 +991,10 @@ function requireAgreement(
     const c = [...bare(r)];
     return c.length === t.length && t.every((ch, i) => !VOICED.test(ch) || c[i] === ch);
   });
+  // 別のエンジン（ndlocr-lite の紙面全体と NDL 側 OCR）の読みが、濁音の字まで一致する。
+  // 同じエンジンの読み直しの不一致（読み直しの切り出しで濁点が潰れる）は問わない
+  const enginesAgree = Deno.env.get("RELAX_RENDAKU") === "1" && !!readingB &&
+    bare(readings[0]!) === target && bare(readingB) === target;
   const reason = agreeing < 2 && !readingByKanon && !skipReading
     ? "align-single-reading"
     : notations.slice(0, 3).filter(same).length < 2 &&
@@ -1000,7 +1004,7 @@ function requireAgreement(
         !(same(notations[3]) &&
           (notationB === undefined || same(notationB) || (e.kango && refuted(notationB))))
     ? "align-single-notation"
-    : !withoutRendaku && !unanimous
+    : !withoutRendaku && !unanimous && !enginesAgree
     ? "align-rendaku"
     : bpAmbiguous && !unanimous
     ? "align-handakuten"
