@@ -106,6 +106,40 @@ Development Group, and are used in conformance with the Group's licence.
 一方向で互換）。JMdict は日々更新されるため、ビルド時に最新版を取得します。
 
 --------------------------------------------------------------------------------
+2.2a KANJIDIC2
+--------------------------------------------------------------------------------
+
+This publication has included material from the KANJIDIC2 dictionary file in
+accordance with the licence provisions of the Electronic Dictionaries Research
+Group. The file is the property of the Electronic Dictionary Research and
+Development Group, and is used in conformance with the Group's licence.
+
+- Project: https://www.edrdg.org/wiki/index.php/KANJIDIC_Project
+- Licence: Creative Commons Attribution-ShareAlike 4.0 International
+  https://www.edrdg.org/edrdg/licence.html
+- Changes: KANJIDIC2 is not redistributed. Its on and kun readings were added
+  to the per-character readings used to align readings with notations.
+
+漢字の音訓を、読みと表記の対応付けに使用（ビルド時に取得し、同梱しない）。
+
+--------------------------------------------------------------------------------
+2.2b Wiktionary (via kaikki.org / Wiktextract)
+--------------------------------------------------------------------------------
+
+Contains material from Wiktionary (English edition), by Wiktionary contributors,
+extracted by kaikki.org (Tatu Ylonen, "Wiktextract: Wiktionary as
+Machine-Readable Structured Data", LREC 2022).
+
+- Source: https://kaikki.org/dictionary/Japanese/
+- Licence: Creative Commons Attribution-ShareAlike 4.0 International
+  https://creativecommons.org/licenses/by-sa/4.0/ (full text: LICENSES/CC-BY-SA-4.0.txt)
+- Changes: Wiktionary entries are not redistributed. The readings (ruby) and
+  historical kana spellings of Japanese entries written with kanji were used
+  to validate readings, in the same way as JMdict.
+
+漢字の見出しの読みと歴史的仮名遣いを、JMdict と同じように照合に使用（ビルド時に取得し、同梱しない）。
+
+--------------------------------------------------------------------------------
 2.3 Unihan Database
 --------------------------------------------------------------------------------
 

@@ -38,6 +38,8 @@ export type Method =
   | "kanon"
   /** OCR が取り違えた字形を直した読みが『日葡辞書』の見出しにあり、表記にも対応した */
   | "nippo"
+  /** 未検証の見出しを紙面と照合して正しいと判定した（試行。src/judged.ts） */
+  | "judged"
   | "none";
 
 export type Fix = {
@@ -255,6 +257,29 @@ type Resolved = {
 const OKURI_CATEGORIES = new Set(["verb", "adjective"]);
 
 /**
+ * 形容詞の読み（現代仮名遣い）から、現代の終止形・SKK の見出し・表記に対応付ける語幹を作る。
+ * 文語の ク活用（たかし）は たかい / たかi、シク活用（うらめし）は うらめしい / うらめしi。
+ * 口語の形（ふとい）はそのまま。活用の種類が分からない文語の形は ク活用とみなす
+ */
+export function adjectiveForm(
+  v: string,
+  conjugation?: string,
+): { modern: string; skkKey: string; stems: string[] } | undefined {
+  if (v.length < 2) return undefined;
+  if (v.endsWith("い")) return { modern: v, skkKey: v.slice(0, -1) + "i", stems: [v.slice(0, -1)] };
+  if (!v.endsWith("し")) return undefined;
+  const stem = v.slice(0, -1);
+  if (conjugation === "シク") return { modern: v + "い", skkKey: v + "i", stems: [v, stem] };
+  // 活用の種類が読めない（形 だけ、形三 などの誤読）ときは、ク活用に限られる語尾（なし、よし、
+  // にくし、やすし、くさし、ふかし など）だけを ク活用とする（おどろかし、にほはし は シク活用）
+  if (
+    conjugation !== "ク" &&
+    !/(なし|よし|にくし|やすし|くさし|[ふぶ]かし|ながし|がたし|かたし|のろし|とし|わるし)$/.test(v)
+  ) return undefined;
+  return { modern: stem + "い", skkKey: stem + "i", stems: [stem] };
+}
+
+/**
  * SKK の送り仮名として妥当か。1 文字のほかは、一段動詞の「え段・い段 + る」（消える = き|える）と
  * 形容詞の「しい」に限る（聞かす を 聞く の「きk」に当てないため）
  */
@@ -371,7 +396,25 @@ function matchJM(reading: string, notation: string, pos: Pos, kango: boolean, ct
 
 function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean, ctx: Context) {
   // 形容詞は、文語の終止形から SKK の送りありの見出しの形が決まらないので対象にしない
-  if (pos.category === "adjective") return undefined;
+  if (pos.category === "adjective") {
+    // 形容詞は、文語の終止形（たか-し、うらめ-し）から現代の形（たかい、うらめしい）と SKK の見出し
+    // （たかi、うらめしi）を作り、語幹を表記に対応付ける（最後の字は訓読みだけで）
+    const found = new Map<string, { modern: string; skkKey: string; okuri: true }>();
+    for (const v of modernVariants(reading, { kango })) {
+      const a = adjectiveForm(v, pos.conjugation);
+      if (!a) continue;
+      if (
+        notationForms(notation, ctx).some((n) =>
+          a.stems.some((st) =>
+            [ctx.unihan, ...(ctx.learned ? [ctx.learned] : [])].some((u) =>
+              alignReading(n, st, u, { maxTrailing: 0, lastKun: true })
+            )
+          )
+        )
+      ) found.set(a.skkKey, { modern: a.modern, skkKey: a.skkKey, okuri: true as const });
+    }
+    return found.size === 1 ? [...found.values()][0] : undefined;
+  }
   if (pos.category === "verb") {
     // 動詞は、読みの最後の 1 文字（送り仮名）を除いた語幹を表記に対応付ける。
     // 底本の表記は送り仮名を省く（奧寄 = あう-よる）。見出しは語幹 + 最後の字の行の子音で、
@@ -391,7 +434,10 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
           alignReading(n, stem, ctx.unihan, { maxTrailing: 0, lastKun })
         )
       ) {
-        found.set(stem + oc, { modern: v, skkKey: stem + oc, okuri: true as const });
+        // 同じ語幹で現代仮名遣いの形（まどう）と古い形（まどふ）の両方が通るときは、先の現代の形を採る
+        if (![...found.values()].some((f) => f.modern.slice(0, -1) === stem)) {
+          found.set(stem + oc, { modern: v, skkKey: stem + oc, okuri: true as const });
+        }
       }
     }
     if (found.size === 0) {
@@ -877,6 +923,7 @@ function splitNotation(
  *   （しぶ-の-ぢん 四武陣 → しぶのじん）ので、SKK の見出しに ぢ・づ が残る候補は採用しない
  *
  * 連濁・半濁点の条件は、三系統すべてが濁点・半濁点まで同じに読んだ候補には課さない。
+ * 連濁・半濁点の条件は、別のエンジン（紙面全体と NDL 側 OCR）の読みが濁音の字まで一致する候補にも課さない。
  * 満たさない候補は未検証にする
  */
 function requireAgreement(
@@ -906,10 +953,14 @@ function requireAgreement(
       notationForms(e.notation!, ctx).some((n) =>
         // 動詞は送り仮名（最後の 1 文字）を除いた語幹を対応付ける
         [ctx.unihan, ...(ctx.learned ? [ctx.learned] : [])].some((u) =>
-          alignReading(n, e.okuri ? v.slice(0, -1) : v, u, {
-            maxTrailing: e.okuri ? 0 : maxTrailing,
-            rendaku,
-          })
+          [false, ...(e.okuri && e.pos.category === "verb" ? [true] : [])].some((lastKun) =>
+            alignReading(n, e.okuri ? v.slice(0, -1) : v, u, {
+              maxTrailing: e.okuri ? 0 : maxTrailing,
+              rendaku,
+              // 動詞の語幹の最後の字は、訓読みの五段動詞の語幹（のく → の）でも見る
+              lastKun,
+            })
+          )
         )
       )
     );
@@ -950,18 +1001,62 @@ function requireAgreement(
     const c = [...bare(r)];
     return c.length === t.length && t.every((ch, i) => !VOICED.test(ch) || c[i] === ch);
   });
+  // 別のエンジン（ndlocr-lite の紙面全体と NDL 側 OCR）の読みが、濁音の字まで一致する。
+  // 同じエンジンの読み直しの不一致（読み直しの切り出しで濁点が潰れる）は問わない
+  // （連濁の検査をこれで緩めて新たに検証済みになった 765 件の抜き取りで 100 / 100 が正しかった）
+  const enginesAgree = !!readingB &&
+    bare(readings[0]!) === target && bare(readingB) === target;
+  // 試行: 表記を字ごとに比べる。各字が 2 系統以上で一致するか、ほかの系統が読んだ字に置き換えると
+  // 読みに合わなくなる（誤読と言える）なら、その字は決まる。1 系統だけが読んだ字は 1 つまでとする
+  // （盆荒男子 / 益荒男子 の 益。公盆 / 鴻益 の 鴻 は 公 も こう と読めるので決まらない。
+  // 白重藤 / 白重籐 の 藤 は、籐 も連濁で どう と読めるので決まらない）
+  const charVote = Deno.env.get("RELAX_NOTATION") === "1" && !e.okuri && (() => {
+    const t = [...toShinjitai(e.notation!, ctx.unihan)];
+    const sameChar = (a: string, b: string) =>
+      a === b || (ctx.unihan.variants.get(a)?.has(b) ?? false);
+    const others = notations.slice(0, 3).filter((n): n is string => !!n)
+      .map((n) => [...toShinjitai(n, ctx.unihan)]);
+    // 字数の違う表記を読んだ系統があれば、表記の字が欠けている（篤 / 篤癧）おそれがあるので決めない
+    if (others.some((n) => n.length !== t.length)) return false;
+    // 1 字の表記は、ほかの字で系統間の一致を確かめられないので決めない（亞 / 啞）
+    if (t.length < 2) return false;
+    // ほかの系統の字に置き換えた表記が、連濁を許して読みに合うか
+    const fits = (n: string) =>
+      !refutedByKanon(e.reading, n, ctx) ||
+      modernVariants(e.reading, { kango: e.kango }).some((v) =>
+        notationForms(n, ctx).some((f) =>
+          [ctx.unihan, ...(ctx.learned ? [ctx.learned] : [])].some((u) =>
+            alignReading(f, v, u, { maxTrailing, rendaku: true })
+          )
+        )
+      );
+    let single = 0;
+    for (const [i, c] of t.entries()) {
+      const support = others.filter((o) => sameChar(o[i], c)).length;
+      if (support >= 2) continue;
+      if (support === 0) return false;
+      const alts = new Set(others.map((o) => o[i]).filter((a) => !sameChar(a, c)));
+      if ([...alts].some((a) => fits(t.with(i, a).join("")))) {
+        return false;
+      }
+      single++;
+    }
+    return single <= 1;
+  })();
   const reason = agreeing < 2 && !readingByKanon && !skipReading
     ? "align-single-reading"
-    : notations.slice(0, 3).filter(same).length < 2 &&
+    : !charVote && notations.slice(0, 3).filter(same).length < 2 &&
         // 列全体の読み直しは元の OCR と同じエンジンなので、別のエンジン（NDL 側 OCR）が別の表記を
         // 読んでいるときは数に入れない（嘉耦 を 嘉隅 と二度読んだ）。NDL 側 OCR の表記が漢語の
         // 読みに合わない誤読なら数に入れる
         !(same(notations[3]) &&
           (notationB === undefined || same(notationB) || (e.kango && refuted(notationB))))
     ? "align-single-notation"
-    : !withoutRendaku && !unanimous
+    : !withoutRendaku && !unanimous && !enginesAgree
     ? "align-rendaku"
-    : bpAmbiguous && !unanimous
+    // 別のエンジンの読みが濁音・半濁音の字まで一致するなら、半濁点の検査も緩める
+    // （これで新たに検証済みになった 488 件の抜き取りで 100 / 100 が正しかった）
+    : bpAmbiguous && !unanimous && !enginesAgree
     ? "align-handakuten"
     : /[ぢづ]/.test(e.skkKey ?? "") && !resolveDzi(e, ctx)
     ? "align-dzi"
@@ -1283,6 +1378,37 @@ export function cleanseVolume(
         options.push({ reading: e.reading, notation: nn.notation, reason: "NDL 側 OCR の表記" });
       }
     }
+    // 見出しの列の全体の読み直し（recheck --full）の読み・表記は、ほかの候補でどれも照合できなかった
+    // ときだけ試す（先に試すと、元の読みで対応付けられた候補を差し置いて誤読の側を採ることがある）。
+    // 1 系統だけの読みなので、対応付けで通った候補は requireAgreement で系統間の一致を求める
+    const full = recheckFull[e.id];
+    const fullOptions: Option[] = [];
+    if (full && Deno.env.get("FULL_OPTIONS") !== "0") {
+      const r = full.reading ? hyphen(full.reading) : undefined;
+      const nn = normalizeNotation(full.notation);
+      const fullNotation = nn.notation && !nn.bad && !sameNotation(nn.notation, e.notation, ctx)
+        ? nn.notation
+        : undefined;
+      if (fullNotation) {
+        fullOptions.push({
+          reading: e.reading,
+          notation: fullNotation,
+          reason: "列全体の読み直しの表記",
+        });
+      }
+      // 読みは字の取り違えだけを見る（字数の違う読みは、列の切り出しで字が落ちたことがある。
+      // 心字池 しんじ-の-いけ を しんじいけ と読んだ）
+      if (r && plain(r) !== plain(e.reading) && plain(r).length === plain(e.reading).length) {
+        fullOptions.push({ reading: r, notation: e.notation, reason: "列全体の読み直しの読み" });
+        if (fullNotation) {
+          fullOptions.push({
+            reading: r,
+            notation: fullNotation,
+            reason: "列全体の読み直しの読みと表記",
+          });
+        }
+      }
+    }
     if (e.order === "outlier") {
       const [lo, hi] = orderBounds(keys, i);
       for (const alt of orderAlternatives(e.reading, lo, hi)) {
@@ -1298,6 +1424,26 @@ export function cleanseVolume(
     // 二系統の OCR が一致した読みは、五十音順から外れていても Unihan での対応付けにかける
     const outlier = e.order === "outlier" && vote !== "agree" && vote !== "override";
     let r = resolve(options, e.pos, e.kango, suspicious, outlier, ctx, readingB);
+    // 列全体の読み直しの候補は、ほかの候補で照合できなかったか、対応付け（系統間の一致を求める）でしか
+    // 通らなかったときに、L・JMdict に載るなら採る
+    const strong = (m: Method | undefined) => m === "L" || m === "JMdict" || m === "dict-reading";
+    let fromFull = false;
+    if (fullOptions.length && !strong(r?.method)) {
+      for (const o of fullOptions) {
+        const rf = resolve([o], e.pos, e.kango, suspicious, outlier, ctx, readingB);
+        if (!rf || (r && rf.method !== "L" && rf.method !== "JMdict")) continue;
+        // 候補 1 つで引いたので、元の読み・表記からの補正をここで記録する
+        r = {
+          ...rf,
+          fix: rf.fix ??
+            (o.reading !== e.reading
+              ? { field: "reading", from: e.reading, to: o.reading, reason: o.reason ?? "" }
+              : { field: "notation", from: e.notation, to: o.notation, reason: o.reason ?? "" }),
+        };
+        fromFull = true;
+        break;
+      }
+    }
     if (r?.method === "L-notation") {
       // 表記の補正は抜き取りで半数近くが誤りだったので適用せず、提案として残して未検証にする
       e.suggestions.push({ ...r.fix!, reason: r.fix!.reason + "（未適用）" });
@@ -1316,7 +1462,20 @@ export function cleanseVolume(
     }
     if (r && r.method !== "L-notation") {
       const split = splitNotation(e.notation, r, e, ctx);
-      if (split === false) {
+      // 二つ並べた表記（骨身骨肉）で、残りの字が辞書に合った表記と同じ字数（2 字以上）なら、
+      // 合った表記だけを採る（もう一方は登録しないが、採る表記は辞書で確かめたもの）
+      const kept = [...r.notation].length;
+      const rest = [...e.notation].length - kept;
+      const pairOnly = split === false && kept >= 2 && plain(e.reading).length >= 2 &&
+        rest === kept && (e.notation.startsWith(r.notation) || e.notation.endsWith(r.notation));
+      if (pairOnly) {
+        e.suggestions.push({
+          field: "notation",
+          from: e.notation!,
+          to: r.notation,
+          reason: "二つ並べた表記のうち辞書に合う方だけを採る",
+        });
+      } else if (split === false) {
         // 表記の字を削って辞書に合わせると、二つ並べた表記の片方だけが残る（零翻 → 零）。
         // 残りの字も同じ読みで通るときだけ両方を採り、それ以外は採らない
         e.suggestions.push({
@@ -1348,7 +1507,9 @@ export function cleanseVolume(
           notationB.notation,
           notationC.notation,
           ctx,
-          recheckFull[e.id],
+          // 列全体の読み直しから採った読み・表記は、その読み直し自身を一致の数に入れない
+          // （蕞爾 を 最爾、身軀 を 身嫗 と 1 系統だけが読んだのに、それ自身との一致で通った）
+          fromFull ? undefined : recheckFull[e.id],
         );
       }
     }
@@ -1381,7 +1542,14 @@ export function cleanseVolume(
           )
         ) ?? variants[0];
       e.modern = modern;
-      if (OKURI_CATEGORIES.has(e.pos.category)) {
+      const adj = e.pos.category === "adjective"
+        ? adjectiveForm(modern, e.pos.conjugation)
+        : undefined;
+      if (adj) {
+        e.modern = adj.modern;
+        e.okuri = true;
+        e.skkKey = adj.skkKey;
+      } else if (OKURI_CATEGORIES.has(e.pos.category)) {
         const oc = okuriChars(modern.slice(-1))[0];
         e.okuri = true;
         e.skkKey = oc && modern.length >= 2 ? modern.slice(0, -1) + oc : undefined;

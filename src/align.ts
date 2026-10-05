@@ -40,6 +40,8 @@ function readingsFor(ch: string, unihan: Unihan, kunOnly = false): string[] {
     // 動詞の連用形（とぶ → とび）。表記の途中の送り仮名は省かれる（飛出 = とびで）
     const i = U_ROW.indexOf(k.at(-1) ?? "");
     if (i >= 0 && I_ROW[i] !== "　" && k.length >= 2) out.add(k.slice(0, -1) + I_ROW[i]);
+    // 動詞の語幹の最後の字（lastKun）では、五段動詞の語幹（のく → の、つく → つ）も 1 文字で許す
+    if (kunOnly && i >= 0 && k.length >= 2) out.add(k.slice(0, -1));
   }
   const list = [...out];
   cache.set(ch + (kunOnly ? ":kun" : ""), list);

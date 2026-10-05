@@ -10,6 +10,10 @@ import { download, readRecord } from "./http.ts";
  * - Unihan データベース (Unicode, Unicode License v3): 漢字の音訓と旧字体→新字体の対応。
  * - JMdict (Electronic Dictionary Research and Development Group, CC BY-SA 4.0): 漢字表記と現代の読み・
  *   品詞の照合、古い仮名遣いの読みの対応。毎日更新されるので取得日時を取得記録に残す。
+ * - KANJIDIC2 (Electronic Dictionary Research and Development Group, CC BY-SA 4.0): 漢字の音訓と
+ *   名乗り。Unihan の kJapanese に無い読みを補い、読みと表記の対応付けに使う。
+ * - Wiktionary（英語版、Wikimedia Foundation、CC BY-SA 4.0。kaikki.org による日本語の項目の抽出）:
+ *   漢字の見出しの読みと歴史的仮名遣い。JMdict に無い古語と、古い仮名遣いから現代の読みへの対応を補う。
  * - 日葡辞書見出し語データ Ver.202510（国立国語研究所、大島英之 作成、相田太一 協力、CC BY 4.0）:
  *   『日葡辞書』（1603）の見出し語の片仮名転写。OCR の読みの取り違えの修復の根拠に使う（nippo.ts）。
  */
@@ -20,6 +24,8 @@ export const resourceUrls = {
   unihan: "https://www.unicode.org/Public/UCD/latest/ucd/Unihan.zip",
   jmdict: "https://www.edrdg.org/pub/Nihongo/JMdict_e.gz",
   nippo: "https://www2.ninjal.ac.jp/textdb_dataset/nipp/data/ew-nippo-202510.zip",
+  kanjidic2: "https://www.edrdg.org/kanjidic/kanjidic2.xml.gz",
+  wiktionary: "https://kaikki.org/dictionary/Japanese/kaikki.org-dictionary-Japanese.jsonl.gz",
 };
 
 const resourceDir = join(DATA_DIR, "raw", "resources");
@@ -28,6 +34,8 @@ export const resourcePaths = {
   unihan: join(resourceDir, "Unihan.zip"),
   jmdict: join(resourceDir, "JMdict_e.gz"),
   nippo: join(resourceDir, "ew-nippo-202510.zip"),
+  kanjidic2: join(resourceDir, "kanjidic2.xml.gz"),
+  wiktionary: join(resourceDir, "kaikki.org-dictionary-Japanese.jsonl.gz"),
 };
 
 /**
@@ -43,7 +51,7 @@ async function isStale(path: string, days: number): Promise<boolean> {
 }
 
 export async function fetchResources({ force = false } = {}): Promise<void> {
-  for (const key of ["skkL", "unihan", "jmdict", "nippo"] as const) {
+  for (const key of ["skkL", "unihan", "jmdict", "nippo", "kanjidic2", "wiktionary"] as const) {
     const refresh = force ||
       (key === "jmdict" && await isStale(resourcePaths[key], JMDICT_MAX_AGE_DAYS));
     const r = await download(resourceUrls[key], resourcePaths[key], { force: refresh });

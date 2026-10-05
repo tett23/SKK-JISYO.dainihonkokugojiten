@@ -36,6 +36,8 @@ NDLデジタルコレクションでインターネット公開されている�
 - [SKK-JISYO.L](https://github.com/skk-dev/dict)（SKK Development Team ほか, GPL-2.0-or-later）
 - [JMdict](https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project)（Electronic Dictionary Research and Development Group, [CC BY-SA 4.0](https://www.edrdg.org/edrdg/licence.html)）。
   This publication has included material from the JMdict (EDICT, etc.) dictionary files in accordance with the licence provisions of the Electronic Dictionaries Research Group.
+- [KANJIDIC2](https://www.edrdg.org/wiki/index.php/KANJIDIC_Project)（Electronic Dictionary Research and Development Group, [CC BY-SA 4.0](https://www.edrdg.org/edrdg/licence.html)）。漢字の音訓を、読みと表記の対応付けに使う
+- [Wiktionary](https://en.wiktionary.org/)（英語版。Wiktionary の寄稿者, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/deed.ja)）の日本語の項目を [kaikki.org](https://kaikki.org/dictionary/Japanese/) が抽出したもの（Tatu Ylonen, “Wiktextract: Wiktionary as Machine-Readable Structured Data”, LREC 2022）。見出しの読みと歴史的仮名遣いを照合に使う
 - [Unihan Database](https://www.unicode.org/charts/unihan.html)（Unicode, Inc., [Unicode License v3](LICENSES/Unicode-3.0.txt)）
 - [tshet-uinh](https://github.com/nk2028/tshet-uinh-js)（Project NK2028, [MIT](LICENSES/MIT-tshet-uinh.txt)）と、同梱の『廣韻』のデータ [tshet-uinh-data](https://github.com/nk2028/tshet-uinh-data)（CC0 1.0）。漢語の読みを字音で確かめるのに使う
 - 大島英之 作成、相田太一 協力「日葡辞書見出し語データ Ver.202510」国立国語研究所, 2025（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.ja)）<https://www2.ninjal.ac.jp/textdb_dataset/nipp/>。見出し語の片仮名転写を、歴史的仮名遣いの読みから作った当時の発音の形と照合し、OCR が取り違えた字形（う/ら、き/さ、あ/の/め）を直す根拠に使う（[docs/cleansing.md](docs/cleansing.md#日葡辞書による字形の取り違えの修復nippo2026年10月5日)）。データ自体は辞書に含まないが、これを根拠に直した読みが辞書に含まれる
@@ -67,7 +69,7 @@ deno task work    # 生データから作業用 JSON を生成
 deno task extract # 作業用 JSON から見出し語・表記の候補を抽出
 deno task all     # 上記を順に実行
 
-deno task resources # クレンジングに使う SKK-JISYO.L・Unihan・JMdict・日葡辞書見出し語データを取得
+deno task resources # クレンジングに使う SKK-JISYO.L・Unihan・JMdict・KANJIDIC2・Wiktionary・日葡辞書見出し語データを取得
 deno task recheck   # NDL 側 OCR と読みが食い違う見出しを切り出して読み直す（画像が必要、数時間）
 deno task cleanse   # 候補を照合・補正して data/cleanse/<pid>.json に保存
 deno task notes     # 大夫・太夫 の読みの傍の発音の注記（たゆう の ュ）を紙面から取り出す（画像が必要）。この後もう一度 cleanse
@@ -102,6 +104,23 @@ SKK の見出し（現代仮名遣いの読み）と表記の両方が紙面の�
 区間は正解率の 95% 信頼区間（Wilson スコア区間）。判定の一覧は [docs/accuracy/](docs/accuracy/) にある。
 
 <!-- accuracy:start -->
+
+<!-- accuracy:v1.0.12:start -->
+
+### v1.0.12
+
+![辞書ごとの正解率と 95% 信頼区間（v1.0.12）](docs/accuracy/v1.0.12.svg)
+
+| 辞書（v1.0.12）                     | 正しい / 抜き取り | 正解率 | 95% 信頼区間 |
+| ----------------------------------- | ----------------: | -----: | -----------: |
+| `SKK-JISYO.dainihonkokugojiten.noL` |       1992 / 2000 |  99.6% | 99.2%〜99.8% |
+
+- 抜き取りの条件: 各辞書から 2000 件（シード値 1765389803）（[docs/accuracy/v1.0.12/sample.json](docs/accuracy/v1.0.12/sample.json)）
+- シード値の事前記録: 確認済み（シード値の記録 1304736 2026-10-06 → 判定の記録 2224b04 2026-10-06）
+- 人の確認: 必要だが未実施（理由: OCR 済みの入力が v1.0.11 と異なるか、記録が無い、v1.0.11 から規則が変わった（src/align.ts、src/cleanse.ts））
+- 注意: L 除外辞書だけを評価した（検証済み・未検証の辞書は測っていない）。未検証から移す規則は方策ごとの抜き取り（docs/unverified-promotion.md）を見て条件を決めたが、この標本は別のシード値で、規則をコミットした後に抜き取った
+
+<!-- accuracy:v1.0.12:end -->
 
 <!-- accuracy:v1.0.11:start -->
 
@@ -401,7 +420,7 @@ data/
 │       ├── R0000001.{xml,json,txt}  ndlocr-lite の出力（画像ごと）
 │       └── run-*.json, run-*.log    実行コマンド・バージョンとログ
 ├── tmp/ndlocr-lite-input/<pid>/  ndlocr-lite の入力（未処理の画像へのハードリンク）
-├── raw/resources/                SKK-JISYO.L（コミット固定）、Unihan.zip、JMdict、日葡辞書見出し語データ
+├── raw/resources/                SKK-JISYO.L（コミット固定）、Unihan.zip、JMdict、KANJIDIC2、Wiktionary、日葡辞書見出し語データ
 ├── work/<pid>.json               作業用 JSON
 ├── extract/<pid>.json            見出し語・表記の候補
 ├── extract-ndl/<pid>.json        NDL 側 OCR から取り出した見出し語の候補（クレンジングでの突き合わせ用）
