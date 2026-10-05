@@ -1427,6 +1427,7 @@ export function cleanseVolume(
     // 列全体の読み直しの候補は、ほかの候補で照合できなかったか、対応付け（系統間の一致を求める）でしか
     // 通らなかったときに、L・JMdict に載るなら採る
     const strong = (m: Method | undefined) => m === "L" || m === "JMdict" || m === "dict-reading";
+    let fromFull = false;
     if (fullOptions.length && !strong(r?.method)) {
       for (const o of fullOptions) {
         const rf = resolve([o], e.pos, e.kango, suspicious, outlier, ctx, readingB);
@@ -1439,6 +1440,7 @@ export function cleanseVolume(
               ? { field: "reading", from: e.reading, to: o.reading, reason: o.reason ?? "" }
               : { field: "notation", from: e.notation, to: o.notation, reason: o.reason ?? "" }),
         };
+        fromFull = true;
         break;
       }
     }
@@ -1505,7 +1507,9 @@ export function cleanseVolume(
           notationB.notation,
           notationC.notation,
           ctx,
-          recheckFull[e.id],
+          // 列全体の読み直しから採った読み・表記は、その読み直し自身を一致の数に入れない
+          // （蕞爾 を 最爾、身軀 を 身嫗 と 1 系統だけが読んだのに、それ自身との一致で通った）
+          fromFull ? undefined : recheckFull[e.id],
         );
       }
     }
