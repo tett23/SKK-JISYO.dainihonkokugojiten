@@ -388,7 +388,8 @@ async function runGit(repoRoot: string, ...args: string[]) {
 /**
  * シード値を判定より前に記録したか（結果を見て選び直していないか）を git の履歴で確かめる。
  * sample.json（シード値と件数）を最初に含むコミットが、判定（o / x）を最初に含むコミットの
- * 祖先（別のより前のコミット）なら確認できたとする
+ * 祖先（別のより前のコミット）なら確認できたとする。sample.json と同じコミットの一覧に入っている
+ * 判定は、ほかのラベルから引き継いだもの（抜き取りの前に判定したもの）として数えない
  */
 export async function checkPreregistration(
   repoRoot: string,
@@ -420,11 +421,20 @@ export async function checkPreregistration(
   };
   const seedCommit = (await commits(accuracyPaths.meta(docsDir, label)))[0];
   let judgedCommit: Commit | undefined;
+  const judgedCount = (text: string) =>
+    parseTsv(text).filter((r) => r.judgment === "o" || r.judgment === "x").length;
   for (const name of DICTIONARIES) {
     const path = accuracyPaths.tsv(docsDir, label, name);
+    // シード値と同じコミットに入った判定は、ほかのラベルで判定済みの候補から引き継いだもの
+    // （抜き取りの前に判定したもの）なので数えない。それより判定が増えたコミットを判定の記録とする
+    let baseline = 0;
+    if (seedCommit) {
+      const at = await runGit(repoRoot, "show", `${seedCommit.full}:${rel(path)}`);
+      if (at.ok) baseline = judgedCount(at.text);
+    }
     for (const c of await commits(path)) {
       const { text } = await runGit(repoRoot, "show", `${c.full}:${c.path}`);
-      if (parseTsv(text).some((r) => r.judgment === "o" || r.judgment === "x")) {
+      if (judgedCount(text) > baseline) {
         const earlier = !judgedCommit ||
           (await runGit(repoRoot, "merge-base", "--is-ancestor", c.full, judgedCommit.full)).ok;
         if (earlier) judgedCommit = c;
