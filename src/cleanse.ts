@@ -453,7 +453,26 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
     }
     return found.size === 1 ? [...found.values()][0] : undefined;
   }
-  for (const v of modernVariants(reading, { kango })) {
+  // 和語の語中の は を わ にした候補（そめわ）と、は のままの候補（そめは）の両方が対応付くときは、
+  // 字の読みのうちハ行の読み（羽 は）に当たるワ行・ア行の読み（羽 わ。助数詞の読み）を除いた
+  // 音訓で対応付く方を先に採る。語中の は が字の読みの頭にあるなら、ハ行転呼ではなく語の境目なので
+  // は のまま読む（染羽 そめは、鷹羽井桁 たかのはいげた）
+  // ただし表記の一部（2 字以上）が L に わ の読みで載っていれば（丹羽 にわ、出羽 でわ、二羽 にわ）、
+  // 先の候補のままにする
+  const variants = modernVariants(reading, { kango });
+  if (variants.length > 1) {
+    const maxTrailing = [...notation].length === 1 ? 1 : 0;
+    const u = withoutHakkoReadings(ctx.unihan);
+    for (const v of variants) {
+      if (!notationForms(notation, ctx).some((n) => alignReading(n, v, u, { maxTrailing }))) {
+        continue;
+      }
+      const support = (x: string) => lPartReadings(notation, ctx).some((r) => x.includes(r));
+      if (v !== variants[0] && support(variants[0]) && !support(v)) break;
+      return { modern: v, skkKey: v, okuri: false };
+    }
+  }
+  for (const v of variants) {
     // 表記の後ろに余った読み（省かれた送り仮名）は、表記が 1 文字の場合（おそ-さ 遲）だけ 1 文字許す。
     // 2 文字以上では許さない（ぎ-すら 擬數 のような誤読を通さないため）
     const maxTrailing = [...notation].length === 1 ? 1 : 0;
@@ -474,6 +493,51 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
     }
   }
   return undefined;
+}
+
+const lByWordCache = new WeakMap<SkkDict, Map<string, string[]>>();
+
+/** 表記の 2 字以上の部分（全体を含む）のうち、L の送りなしの語として載るものの読み */
+function lPartReadings(notation: string, ctx: Context): string[] {
+  let byWord = lByWordCache.get(ctx.L);
+  if (!byWord) {
+    byWord = new Map();
+    for (const [r, ws] of ctx.L.okuriNasi) {
+      for (const w of ws) byWord.set(w, [...(byWord.get(w) ?? []), r]);
+    }
+    lByWordCache.set(ctx.L, byWord);
+  }
+  const out: string[] = [];
+  for (const n of notationForms(notation, ctx)) {
+    const cs = [...n];
+    for (let i = 0; i < cs.length; i++) {
+      for (let j = i + 2; j <= cs.length; j++) {
+        out.push(...(byWord.get(cs.slice(i, j).join("")) ?? []));
+      }
+    }
+  }
+  return out;
+}
+
+const HAKKO: Record<string, string> = { わ: "は", い: "ひ", う: "ふ", え: "へ", お: "ほ" };
+const withoutHakkoCache = new WeakMap<Unihan, Unihan>();
+
+/**
+ * ハ行の読み（羽 は、原 はら）がある字から、それに当たるワ行・ア行の読み（羽 わ、原 わら）を除いた
+ * 音訓を返す（訓読みだけ。結果は Unihan ごとに保存する）
+ */
+function withoutHakkoReadings(unihan: Unihan): Unihan {
+  const cached = withoutHakkoCache.get(unihan);
+  if (cached) return cached;
+  const readings = new Map(unihan.readings);
+  for (const [ch, r] of unihan.readings) {
+    const all = new Set([...r.on, ...r.kun]);
+    const kun = r.kun.filter((k) => !(HAKKO[k[0]] && all.has(HAKKO[k[0]] + k.slice(1))));
+    if (kun.length !== r.kun.length) readings.set(ch, { ...r, kun });
+  }
+  const out = { ...unihan, readings };
+  withoutHakkoCache.set(unihan, out);
+  return out;
 }
 
 /**
@@ -529,8 +593,12 @@ function matchKanon(
   for (const n of notationForms(notation, ctx)) {
     const segs = kanonSegment(n, reading, ctx.unihan, { unihanOn: true, rendaku });
     if (!segs) continue;
-    const modern = segs.map((s) => modernVariants(s.replaceAll("ゎ", "わ"), { kango: true })[0])
-      .join("");
+    // 1 字の字音の語末の ふ は、お段の後でも う と読む（法 ほふ → ほう、業 ごふ → ごう）。
+    // 語全体の変換では お段 + ふ が 2 字にまたがる（祖父 そ-ふ）ことがあるので、字ごとの字音でだけ直す
+    const modern = segs.map((s) => {
+      const m = modernVariants(s.replaceAll("ゎ", "わ"), { kango: true })[0];
+      return /^[^ふ]*[おこごそぞとどのほぼぽもよろを]ふ$/.test(s) ? m.replace(/ふ$/, "う") : m;
+    }).join("");
     // 合拗音の わ を あ と読んだ箇所（櫻花 あう-くあ）を直した読み。区切り "-" の位置は保つ
     const fixed = [...segs.join("")];
     let k = 0;
