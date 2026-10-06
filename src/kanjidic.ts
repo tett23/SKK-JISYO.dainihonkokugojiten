@@ -61,7 +61,11 @@ export function withKanjidic(unihan: Unihan, kd: Kanjidic, { nanori = false } = 
     readings.set(ch, {
       // 音読みも、清音の形がある濁音の形（登 ドウ）は採らない。漢語の濁点の読み分け（登記 とうき /
       // どうき）が決まらなくなる
-      on: [...new Set([...cur.on, ...r.on])].filter((k) => cur.on.includes(k) || notRendaku(k)),
+      // KANJIDIC2 に音読みが無く訓読みだけの字（国字の用法の 喰 くう）は、Unihan の音読み（喰 を
+      // 餐 の異体として さん・そん）を採らない（朝飡 を 朝喰 と誤読して ちょうそん に対応付いた）
+      on: r.on.length === 0 && r.kun.length > 0
+        ? []
+        : [...new Set([...cur.on, ...r.on])].filter((k) => cur.on.includes(k) || notRendaku(k)),
       kun: [...new Set([...cur.kun, ...r.kun, ...(nanori ? r.nanori : [])])].filter((k) =>
         cur.kun.includes(k) || notRendaku(k)
       ),

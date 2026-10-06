@@ -490,10 +490,10 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
         .sort((a, b) =>
           b.s - a.s ||
           Number(
-            notationForms(notation, ctx).some((n) =>
-              alignReading(n, b.x, ctx.unihan, { maxTrailing })
-            ),
-          ) -
+              notationForms(notation, ctx).some((n) =>
+                alignReading(n, b.x, ctx.unihan, { maxTrailing })
+              ),
+            ) -
             Number(
               notationForms(notation, ctx).some((n) =>
                 alignReading(n, a.x, ctx.unihan, { maxTrailing })
@@ -609,7 +609,9 @@ function lPartScore(x: string, notation: string, ctx: Context): number {
     );
   let score = 0;
   for (const { reading: r, at, len } of lPartReadings(notation, ctx)) {
-    if (at === "head" && x.startsWith(r) && fits(cs.slice(len).join(""), x.slice(r.length))) score++;
+    if (at === "head" && x.startsWith(r) && fits(cs.slice(len).join(""), x.slice(r.length))) {
+      score++;
+    }
     if (at === "tail" && x.endsWith(r) && fits(cs.slice(0, -len).join(""), x.slice(0, -r.length))) {
       score++;
     }
