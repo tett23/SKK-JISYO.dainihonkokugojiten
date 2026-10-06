@@ -472,7 +472,7 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
     const kept = variants.find((v) =>
       v.endsWith(last) && forms.some((n) => alignReading(n, v, ctx.unihan, { maxTrailing: 1 }))
     );
-    if (!whole && kept) return { modern: kept, skkKey: kept, okuri: false };
+    if (!whole && kept) return withRenjo(kept, notation, ctx);
   }
   if (variants.length > 1) {
     const maxTrailing = [...notation].length === 1 ? 1 : 0;
@@ -481,9 +481,27 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
       if (!notationForms(notation, ctx).some((n) => alignReading(n, v, u, { maxTrailing }))) {
         continue;
       }
-      const support = (x: string) => lPartReadings(notation, ctx).some((r) => x.includes(r));
-      if (v !== variants[0] && support(variants[0]) && !support(v)) break;
-      return { modern: v, skkKey: v, okuri: false };
+      // 対応付いた候補が L の語の読みを含まず、ほかの候補が含む（丹羽 にわ、尾張 おわり、音羽 おとわ）
+      // なら、L の語の読みを含む候補を採る（尾張 は 張 の訓 はり で おはり に対応付いてしまう）
+      // L の語の読みを同じ位置に多く含む候補を採る（尾張八丈 おわりはちじょう）。同じ数なら、
+      // 表記全体が音訓に対応付くもの（丹羽扇 にわおうぎ）を先に採る
+      const score = (x: string) => lPartScore(x, notation, ctx);
+      const best = variants.map((x) => ({ x, s: score(x) })).filter((c) => c.s > score(v))
+        .sort((a, b) =>
+          b.s - a.s ||
+          Number(
+              notationForms(notation, ctx).some((n) =>
+                alignReading(n, b.x, ctx.unihan, { maxTrailing })
+              ),
+            ) -
+            Number(
+              notationForms(notation, ctx).some((n) =>
+                alignReading(n, a.x, ctx.unihan, { maxTrailing })
+              ),
+            )
+        )[0];
+      if (best) return withRenjo(best.x, notation, ctx);
+      return withRenjo(v, notation, ctx);
     }
   }
   for (const v of variants) {
@@ -494,7 +512,7 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
     if (
       notationForms(notation, ctx).some((n) => alignReading(n, v, ctx.unihan, { maxTrailing }))
     ) {
-      return { modern: v, skkKey: v, okuri: false };
+      return withRenjo(v, notation, ctx);
     }
   }
   const plainReading = reading.replaceAll(/[-・]/g, "");
@@ -503,7 +521,7 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
     if (
       notationForms(notation, ctx).some((n) => alignLearned(n, v, plainReading, maxTrailing, ctx))
     ) {
-      return { modern: v, skkKey: v, okuri: false };
+      return withRenjo(v, notation, ctx);
     }
   }
   return undefined;
@@ -522,10 +540,33 @@ function splitDoubled(notation: string, key: string, ctx: Context): [string, str
   return inDict ? undefined : [a, b];
 }
 
+const unvoicedHead = (r: string) =>
+  r.normalize("NFD").replace(/^(.)[\u3099\u309A]/, "$1").normalize("NFC");
+
+const RENJO: Record<string, string> = { な: "あ", に: "い", ぬ: "う", ね: "え", の: "お" };
+
+/**
+ * 連声（観音 くわんおん → かんのん、因縁 いんえん → いんねん）。字ごとの読みを並べた見出しは
+ * 連声しない形になるので、表記の一部（2 字以上）が L に連声した読みで載っていれば、その形に直す
+ */
+function withRenjo(v: string, notation: string, ctx: Context) {
+  let modern = v;
+  for (const { reading: r, at } of lPartReadings(notation, ctx)) {
+    const plain = r.replace(/ん([なにぬねの])/g, (_, c: string) => "ん" + RENJO[c]);
+    if (plain === r) continue;
+    if (at === "head" && modern.startsWith(plain)) modern = r + modern.slice(plain.length);
+    if (at === "tail" && modern.endsWith(plain)) modern = modern.slice(0, -plain.length) + r;
+  }
+  return { modern, skkKey: modern, okuri: false as const };
+}
+
 const lByWordCache = new WeakMap<SkkDict, Map<string, string[]>>();
 
 /** 表記の 2 字以上の部分（全体を含む）のうち、L の送りなしの語として載るものの読み */
-function lPartReadings(notation: string, ctx: Context): string[] {
+function lPartReadings(
+  notation: string,
+  ctx: Context,
+): { reading: string; at: "head" | "tail"; len: number }[] {
   let byWord = lByWordCache.get(ctx.L);
   if (!byWord) {
     byWord = new Map();
@@ -534,16 +575,48 @@ function lPartReadings(notation: string, ctx: Context): string[] {
     }
     lByWordCache.set(ctx.L, byWord);
   }
-  const out: string[] = [];
+  // 表記の頭か尻の部分（全体を含む）だけを見る。途中の部分の読みは、読みの中の位置が決まらない
+  // （和風 わふう が くわふう の中に見つかる）
+  const out: { reading: string; at: "head" | "tail"; len: number }[] = [];
   for (const n of notationForms(notation, ctx)) {
     const cs = [...n];
-    for (let i = 0; i < cs.length; i++) {
-      for (let j = i + 2; j <= cs.length; j++) {
-        out.push(...(byWord.get(cs.slice(i, j).join("")) ?? []));
+    for (let k = 2; k <= cs.length; k++) {
+      for (const r of byWord.get(cs.slice(0, k).join("")) ?? []) {
+        out.push({ reading: r, at: "head", len: k });
+      }
+      for (const r of byWord.get(cs.slice(-k).join("")) ?? []) {
+        out.push({ reading: r, at: "tail", len: k });
       }
     }
   }
   return out;
+}
+
+/**
+ * 読みが、表記の頭・尻の部分の L の読みを、同じ位置に含む数。残りの読みが残りの表記に音訓で
+ * 対応付くときだけ数える（和風 わふう が くわふう の尻に見つかっても、く は表記に対応しない）
+ */
+function lPartScore(x: string, notation: string, ctx: Context): number {
+  const cs = [...notationForms(notation, ctx).at(-1)!];
+  // 残りの表記は、音訓に対応付くか、それ自身が L にその読みで載る（尾張八丈 の 尾張 おわり）
+  const fits = (n: string, r: string) =>
+    n === "" ? r === "" : r !== "" && (
+      // 残りが語の後ろなら、頭の濁点は連濁（出羽絹 の 絹 ぎぬ）なので外して対応付ける
+      notationForms(n, ctx).some((f) =>
+        [r, unvoicedHead(r)].some((x) => alignReading(f, x, ctx.unihan, { maxTrailing: 0 }))
+      ) ||
+      (ctx.L.okuriNasi.get(r)?.some((w) => notationForms(n, ctx).includes(w)) ?? false)
+    );
+  let score = 0;
+  for (const { reading: r, at, len } of lPartReadings(notation, ctx)) {
+    if (at === "head" && x.startsWith(r) && fits(cs.slice(len).join(""), x.slice(r.length))) {
+      score++;
+    }
+    if (at === "tail" && x.endsWith(r) && fits(cs.slice(0, -len).join(""), x.slice(0, -r.length))) {
+      score++;
+    }
+  }
+  return score;
 }
 
 const HAKKO: Record<string, string> = { わ: "は", い: "ひ", う: "ふ", え: "へ", お: "ほ" };
