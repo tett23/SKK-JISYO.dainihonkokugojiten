@@ -485,23 +485,7 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
       // なら、L の語の読みを含む候補を採る（尾張 は 張 の訓 はり で おはり に対応付いてしまう）
       // L の語の読みを同じ位置に多く含む候補を採る（尾張八丈 おわりはちじょう）。同じ数なら、
       // 表記全体が音訓に対応付くもの（丹羽扇 にわおうぎ）を先に採る
-      const score = (x: string) => lPartScore(x, notation, ctx);
-      const best = variants.map((x) => ({ x, s: score(x) })).filter((c) => c.s > score(v))
-        .sort((a, b) =>
-          b.s - a.s ||
-          Number(
-              notationForms(notation, ctx).some((n) =>
-                alignReading(n, b.x, ctx.unihan, { maxTrailing })
-              ),
-            ) -
-            Number(
-              notationForms(notation, ctx).some((n) =>
-                alignReading(n, a.x, ctx.unihan, { maxTrailing })
-              ),
-            )
-        )[0];
-      if (best) return withRenjo(best.x, notation, ctx);
-      return withRenjo(v, notation, ctx);
+      return withRenjo(pickByL(v, variants, notation, maxTrailing, ctx), notation, ctx);
     }
   }
   for (const v of variants) {
@@ -512,7 +496,7 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
     if (
       notationForms(notation, ctx).some((n) => alignReading(n, v, ctx.unihan, { maxTrailing }))
     ) {
-      return withRenjo(v, notation, ctx);
+      return withRenjo(pickByL(v, variants, notation, maxTrailing, ctx), notation, ctx);
     }
   }
   const plainReading = reading.replaceAll(/[-・]/g, "");
@@ -521,7 +505,7 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
     if (
       notationForms(notation, ctx).some((n) => alignLearned(n, v, plainReading, maxTrailing, ctx))
     ) {
-      return withRenjo(v, notation, ctx);
+      return withRenjo(pickByL(v, variants, notation, maxTrailing, ctx), notation, ctx);
     }
   }
   return undefined;
@@ -629,7 +613,32 @@ function lPartScore(x: string, notation: string, ctx: Context): number {
       ) ||
       (ctx.L.okuriNasi.get(r)?.some((w) => notationForms(n, ctx).includes(w)) ?? false)
     );
+  lPartReadings(notation, ctx);
   let score = 0;
+  // 表記の途中の部分（黑河原毛 の 河原 かわら）は、読みの中の位置ごとに、前と後ろの残りがそれぞれ
+  // 前と後ろの表記に対応付くときだけ数える
+  for (const n of notationForms(notation, ctx)) {
+    const ns = [...n];
+    for (let i = 1; i < ns.length; i++) {
+      for (let j = i + 2; j < ns.length; j++) {
+        const mid = ns.slice(i, j).join("");
+        for (const r of lByWordCache.get(ctx.L)!.get(mid) ?? []) {
+          // 字ごとの音訓でそのまま読める部分（國語學校 の 語學 ごがく）は数えない。数えるのは、L の読みが
+          // 字ごとの読みと違う部分（河原 かわら）だけ
+          if (alignReading(mid, r, ctx.unihan, { maxTrailing: 0 })) continue;
+          for (let p = x.indexOf(r); p > 0; p = x.indexOf(r, p + 1)) {
+            if (
+              fits(cs.slice(0, i).join(""), x.slice(0, p)) &&
+              fits(cs.slice(j).join(""), x.slice(p + r.length))
+            ) {
+              score++;
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
   for (const { reading: r, at, len } of lPartReadings(notation, ctx)) {
     if (at === "head" && x.startsWith(r) && fits(cs.slice(len).join(""), x.slice(r.length))) {
       score++;
@@ -639,6 +648,30 @@ function lPartScore(x: string, notation: string, ctx: Context): number {
     }
   }
   return score;
+}
+
+/**
+ * 対応付いた候補 v より、表記の部分の L の読みを同じ位置に多く含む候補があれば、それを採る
+ * （尾張八丈 おわりはちじょう、黑河原毛 くろかわらげ、阿波足袋 あわたび）。同じ数なら、表記全体が
+ * 音訓に対応付くもの（丹羽扇 にわおうぎ）を先に採る
+ */
+function pickByL(
+  v: string,
+  variants: string[],
+  notation: string,
+  maxTrailing: number,
+  ctx: Context,
+): string {
+  if (variants.length < 2) return v;
+  const score = (x: string) => lPartScore(x, notation, ctx);
+  const aligned = (x: string) =>
+    Number(
+      notationForms(notation, ctx).some((n) => alignReading(n, x, ctx.unihan, { maxTrailing })),
+    );
+  const base = score(v);
+  const best = variants.map((x) => ({ x, s: score(x) })).filter((c) => c.s > base)
+    .sort((a, b) => b.s - a.s || aligned(b.x) - aligned(a.x))[0];
+  return best ? best.x : v;
 }
 
 const HAKKO: Record<string, string> = { わ: "は", い: "ひ", う: "ふ", え: "へ", お: "ほ" };
@@ -1667,7 +1700,30 @@ export function cleanseVolume(
         }
       }
     }
-    if (e.order === "outlier") {
+    // 読みの頭が区切り "-" で始まるのは、頭の字を OCR が落としたもの（こ-いう 故友 を -いう）。
+    // 前後の候補の頭の字（清音・濁音）を足した読みを試し、頭の字の置き換えは試さない
+    const dropped = /^[-ー]/.test(e.source.reading);
+    if (dropped) {
+      const [lo, hi] = orderBounds(keys, i);
+      const heads = new Set(
+        [lo[0], hi[0]].filter((c) => c && c !== "\uffff").flatMap((c) => {
+          const b = bareKana(c);
+          return [b, voiced(b) ?? b];
+        }),
+      );
+      for (const h of heads) {
+        const alt = h + "-" + e.reading.replace(/^[-ー]+/, "");
+        const k = collationKey(alt);
+        if (lo <= k && k <= hi) {
+          options.push({
+            reading: alt,
+            notation: e.notation,
+            reason: "OCR が落とした頭の字を補う",
+          });
+        }
+      }
+    }
+    if (e.order === "outlier" && !dropped) {
       const [lo, hi] = orderBounds(keys, i);
       for (const alt of orderAlternatives(e.reading, lo, hi)) {
         options.push({
