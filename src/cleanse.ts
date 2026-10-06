@@ -557,10 +557,32 @@ function withRenjo(v: string, notation: string, ctx: Context) {
     if (at === "head" && modern.startsWith(plain)) modern = r + modern.slice(plain.length);
     if (at === "tail" && modern.endsWith(plain)) modern = modern.slice(0, -plain.length) + r;
   }
+  // 表記の途中の部分（四親王家 の 親王）は、連声しない形が読みにちょうど一度だけ現れるときに直す
+  for (const r of lMidReadings(notation, ctx)) {
+    const plain = r.replace(/ん([なにぬねの])/g, (_, c: string) => "ん" + RENJO[c]);
+    if (plain === r || modern.split(plain).length !== 2) continue;
+    modern = modern.replace(plain, r);
+  }
   return { modern, skkKey: modern, okuri: false as const };
 }
 
 const lByWordCache = new WeakMap<SkkDict, Map<string, string[]>>();
+
+/** 表記の途中（頭と尻を含まない）の 2 字以上の部分のうち、L の送りなしの語として載るものの読み */
+function lMidReadings(notation: string, ctx: Context): string[] {
+  lPartReadings(notation, ctx);
+  const byWord = lByWordCache.get(ctx.L)!;
+  const out: string[] = [];
+  for (const n of notationForms(notation, ctx)) {
+    const cs = [...n];
+    for (let i = 1; i < cs.length; i++) {
+      for (let j = i + 2; j < cs.length; j++) {
+        out.push(...(byWord.get(cs.slice(i, j).join("")) ?? []));
+      }
+    }
+  }
+  return out;
+}
 
 /** 表記の 2 字以上の部分（全体を含む）のうち、L の送りなしの語として載るものの読み */
 function lPartReadings(
@@ -951,6 +973,70 @@ const plain = (r: string) => r.replaceAll("-", "");
 const bareKana = (c: string) => c.normalize("NFD")[0];
 
 /**
+ * 語頭の字の清濁だけが系統間で割れ（濁点を除いて同じ読みの系統だけを比べる。NDL 側 OCR の ぎょん の
+ * ような別の字の誤読は除く）、読みが L・JMdict に載らない漢語なら、表記の頭の部分（土佐派 の 土佐
+ * とさ）の L の読みに合う方に合わせる。語頭は連濁しないので、清濁は語ごとに決まる。直したら true
+ */
+function resolveHeadVoicing(e: CleanEntry, sources: (string | undefined)[], ctx: Context): boolean {
+  if (e.method !== "align" || !e.kango) return false;
+  const current = [...plain(e.reading)];
+  const rest = current.slice(1).join("");
+  const srcs = sources.filter((s): s is string => !!s).map((s) => [...plain(s)])
+    .filter((s) => s.length === current.length && bareKana(s[0]) === bareKana(current[0]));
+  if (srcs.some((s) => s.slice(1).join("") !== rest)) return false;
+  const heads = new Set([current[0], ...srcs.map((s) => s[0])]);
+  if (heads.size !== 2) return false;
+  const withHead = (h: string) => [...e.reading].map((c, i) => (i === 0 ? h : c)).join("");
+  // 清濁の読みのうち L・JMdict に載るものがちょうど 1 つなら、それに合わせる（墮胎藥 だたいやく、
+  // 土佐派 とさは。NDL 側 OCR の別の字の誤読があると、resolveVoicing では割れを見つけられない）
+  const dict = [...heads].flatMap((h) => {
+    const r = withHead(h);
+    const l = matchL(r, e.notation!, e.pos, e.kango, ctx);
+    const m = l ?? matchJM(r, e.notation!, e.pos, e.kango, ctx);
+    return m ? [{ r, m, inL: !!l }] : [];
+  });
+  if (dict.length > 1) return false;
+  if (dict.length === 1) {
+    const [{ r, m, inL }] = dict;
+    if (r !== e.reading) {
+      e.fixes.push({
+        field: "reading",
+        from: e.reading,
+        to: r,
+        reason: "濁点・半濁点の読み分けを辞書で判定",
+      });
+      e.reading = r;
+    }
+    e.modern = m.modern;
+    e.skkKey = m.skkKey;
+    e.okuri = m.okuri;
+    e.method = inL ? "L" : "JMdict";
+    return true;
+  }
+  const parts = lPartReadings(e.notation!, ctx).filter((p) =>
+    p.at === "head" && p.len < [...e.notation!].length
+  );
+  const fit = [...heads].map((h) => h + rest).filter((r) =>
+    parts.some((p) => r.startsWith(p.reading))
+  );
+  if (fit.length !== 1 || fit[0] === current.join("")) return false;
+  const reading = withHead(fit[0][0]);
+  const m = matchAlign(reading, e.notation!, e.pos, e.kango, ctx);
+  if (!m) return false;
+  e.fixes.push({
+    field: "reading",
+    from: e.reading,
+    to: reading,
+    reason: "語頭の清濁を表記の頭の部分の L の読みで判定",
+  });
+  e.reading = reading;
+  e.modern = m.modern;
+  e.skkKey = m.skkKey;
+  e.okuri = m.okuri;
+  return true;
+}
+
+/**
  * 濁点・半濁点の読み分け。系統ごとの読みが濁点・半濁点だけで割れている箇所について、
  * 観測された読みの組み合わせのうち L・JMdict に同じ表記で載るものがちょうど 1 つなら、
  * それに合わせる。濁点の有無だけの違いなので、底本の語形を現代の語形に書き換えることはない。
@@ -958,6 +1044,7 @@ const bareKana = (c: string) => c.normalize("NFD")[0];
  * （抜き取りでは、この場合の誤りが約 13% あった）。
  */
 function resolveVoicing(e: CleanEntry, sources: (string | undefined)[], ctx: Context) {
+  if (resolveHeadVoicing(e, sources, ctx)) return;
   const current = [...plain(e.reading)];
   const srcs = sources.filter((s): s is string => !!s).map((s) => [...plain(s)])
     .filter((s) => s.length === current.length);
@@ -1145,8 +1232,11 @@ function requireAgreement(
   });
   // NDL 側 OCR は区切りを「ー」で出すことがある（あか-がらし を あかーがらし）ので、それも除いて比べる
   const bare = (r: string) => r.replaceAll(/[-ー]/g, "");
-  const agreeing = [...readings, readingD].filter((r) => r !== undefined && bare(r) === target)
-    .length;
+  // 語頭の清濁を L で決めた候補は、語頭の字の濁点を除いて系統間の一致を数える
+  const headFixed = e.fixes.some((f) => f.reason === "語頭の清濁を表記の頭の部分の L の読みで判定");
+  const norm = (x: string) => (headFixed && x ? bareKana(x[0]) + x.slice(1) : x);
+  const agreeing = [...readings, readingD]
+    .filter((r) => r !== undefined && norm(bare(r)) === norm(target)).length;
   // 漢語で、読みが連濁なしで表記の字音に区切れ、ほかの系統の読みがどれも字音にも音訓にも
   // 合わない（誤読と言える）なら、一致が 1 系統でもその読みに決まる（雲翳 うんえい / らんえい）
   const otherReadings = [...new Set([...readings, readingD].filter((r): r is string => !!r))]
