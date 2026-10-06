@@ -460,6 +460,20 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
   // ただし表記の一部（2 字以上）が L に わ の読みで載っていれば（丹羽 にわ、出羽 でわ、二羽 にわ）、
   // 先の候補のままにする
   const variants = modernVariants(reading, { kango });
+  // 1 字の表記の後ろに余った は（表記に対応しない助詞）は、ハ行転呼させない。
+  // 物 ものは（物附 の略）、然 さは、若 もしは を ものわ・さわ・もしわ にしない。
+  // ひ・ふ・へ（贖 あがひ → あがい、占 うらへ → うらえ）は名詞の語尾なので転呼させる
+  const last = plain(reading).at(-1) ?? "";
+  if ([...notation].length === 1 && last === "は" && variants.length > 1) {
+    const forms = notationForms(notation, ctx);
+    const whole = variants.some((v) =>
+      forms.some((n) => alignReading(n, v, ctx.unihan, { maxTrailing: 0 }))
+    );
+    const kept = variants.find((v) =>
+      v.endsWith(last) && forms.some((n) => alignReading(n, v, ctx.unihan, { maxTrailing: 1 }))
+    );
+    if (!whole && kept) return { modern: kept, skkKey: kept, okuri: false };
+  }
   if (variants.length > 1) {
     const maxTrailing = [...notation].length === 1 ? 1 : 0;
     const u = withoutHakkoReadings(ctx.unihan);
@@ -493,6 +507,19 @@ function matchAlign(reading: string, notation: string, pos: Pos, kango: boolean,
     }
   }
   return undefined;
+}
+
+/** 表記を同じ字数の前半と後半に分け、それぞれが単独で読み全体に対応付くなら返す */
+function splitDoubled(notation: string, key: string, ctx: Context): [string, string] | undefined {
+  const cs = [...notation];
+  if (cs.length < 2 || cs.length % 2 !== 0) return undefined;
+  const a = cs.slice(0, cs.length / 2).join(""), b = cs.slice(cs.length / 2).join("");
+  const fits = (n: string) =>
+    notationForms(n, ctx).some((f) => alignReading(f, key, ctx.unihan, { maxTrailing: 0 }));
+  if (!fits(a) || !fits(b)) return undefined;
+  const inDict = ctx.L.okuriNasi.get(key)?.some((w) => notationForms(notation, ctx).includes(w)) ||
+    jmForms(notation, ctx).some((f) => f.readings.some((r) => r.reading === key));
+  return inDict ? undefined : [a, b];
 }
 
 const lByWordCache = new WeakMap<SkkDict, Map<string, string[]>>();
@@ -1628,6 +1655,21 @@ export function cleanseVolume(
       if (!e.skkKey) {
         e.status = "excluded";
         e.reason = "no-skk-key";
+      }
+    }
+    // 二つの表記を並べた見出し（冑兜 = 冑・兜）: 表記の前半と後半がそれぞれ単独で読み全体に対応付き、
+    // 表記全体では L・JMdict に載らないなら、二つの表記に分ける
+    if (e.status === "accepted" && !e.okuri && e.skkKey && !e.altNotations) {
+      const halves = splitDoubled(e.notation, e.skkKey, ctx);
+      if (halves) {
+        e.fixes.push({
+          field: "notation",
+          from: e.notation,
+          to: halves.join("・"),
+          reason: "二つの表記を並べた見出しを分ける",
+        });
+        e.notation = halves[0];
+        e.altNotations = [halves[1]];
       }
     }
     e.shinjitai = toShinjitai(e.notation, ctx.unihan);
