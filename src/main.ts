@@ -237,6 +237,17 @@ async function cleanseStep(pids: string[]) {
       learned.set(ch, [...new Set([...(learned.get(ch) ?? []), ...rs])]);
     }
   }
+  // 試行（案 B）: 根拠の語の数の下限を変え（LEARN_MIN=2）、Wiktionary の語も根拠にする（LEARN_WIKT=1）
+  const learnMin = Number(Deno.env.get("LEARN_MIN") ?? "3");
+  if (learnMin !== 3 || Deno.env.get("LEARN_WIKT") === "1") {
+    const w = Deno.env.get("LEARN_WIKT") === "1"
+      ? await loadWiktionary(resourcePaths.wiktionary)
+      : undefined;
+    const src = jm && w ? withWiktionary(jm, w) : jm;
+    for (const [ch, rs] of learnReadings(L, src, unihan, learnMin)) {
+      learned.set(ch, [...new Set([...(learned.get(ch) ?? []), ...rs])]);
+    }
+  }
   console.log(`  学習した字の読み: ${[...learned.values()].flat().length}（${learned.size} 字）`);
   // 試行: JMnedict（固有名詞）を JMdict と同じように照合に使う（JMNEDICT=<パス>）
   const nePath = Deno.env.get("JMNEDICT");

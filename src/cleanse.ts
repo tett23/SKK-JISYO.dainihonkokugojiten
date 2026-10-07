@@ -1891,6 +1891,28 @@ export function cleanseVolume(
         e.altNotations = [halves[1]];
       }
     }
+    // 試行（案 A）: 理由なしの未検証で、二つのエンジンの読み・表記が一致するものを検証済みにする
+    // （PROMOTE_AGREE=1）。PROMOTE_AGREE=2 は、取り違えやすいかなを直した読みが辞書か対応付けに
+    // 合うもの（二つのエンジンが同じように誤読したおそれがある）を除く
+    const agreeMode = Deno.env.get("PROMOTE_AGREE");
+    if (
+      agreeMode && e.status === "unverified" && !e.reason && e.ndl?.agree && e.skkKey &&
+      (agreeMode === "1" ||
+        !repairAlternatives(e.reading).some((r) =>
+          matchL(r, e.notation!, e.pos, e.kango, ctx) ||
+          matchJM(r, e.notation!, e.pos, e.kango, ctx) ||
+          matchAlign(r, e.notation!, e.pos, e.kango, ctx)
+        ))
+    ) {
+      e.status = "accepted";
+      e.method = "none";
+      e.fixes.push({
+        field: "modern",
+        from: e.skkKey,
+        to: e.skkKey,
+        reason: "試行: 二つのエンジンの読み・表記が一致",
+      });
+    }
     e.shinjitai = toShinjitai(e.notation, ctx.unihan);
     if (e.status !== "accepted") delete e.altNotations;
     else if (e.altNotations) {
